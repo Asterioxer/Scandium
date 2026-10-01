@@ -1,0 +1,26 @@
+# Build output
+/build/
+/cmake-build-*/
+
+# IDE
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Compiled objects
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Profiling / benchmark output
+benchmarks/results/
+*.prof
+*.trace
+
+# OS
+.DS_Store
+Thumbs.db
