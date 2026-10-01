@@ -11,7 +11,6 @@ add_library(scandium_core
     src/math/vec3.cpp
 )
 target_include_directories(scandium_core PUBLIC include)
-
 target_compile_features(scandium_core PUBLIC cxx_std_20)
 
 if(MSVC)
@@ -25,7 +24,12 @@ target_link_libraries(scandium_demo PRIVATE scandium_core)
 
 if(SCANDIUM_BUILD_TESTS)
     enable_testing()
+
     add_executable(scandium_tests tests/vec3_tests.cpp)
     target_link_libraries(scandium_tests PRIVATE scandium_core)
-    add_test(NAME scandium_tests COMMAND scandium_tests)
+    add_test(NAME scandium_vec3_tests COMMAND scandium_tests)
+
+    add_executable(scandium_mat4_tests tests/mat4_tests.cpp)
+    target_link_libraries(scandium_mat4_tests PRIVATE scandium_core)
+    add_test(NAME scandium_mat4_tests COMMAND scandium_mat4_tests)
 endif()
