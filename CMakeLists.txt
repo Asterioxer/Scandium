@@ -1,0 +1,31 @@
+cmake_minimum_required(VERSION 3.20)
+project(Scandium VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(SCANDIUM_BUILD_TESTS "Build Scandium tests" ON)
+
+add_library(scandium_core
+    src/math/vec3.cpp
+)
+target_include_directories(scandium_core PUBLIC include)
+
+target_compile_features(scandium_core PUBLIC cxx_std_20)
+
+if(MSVC)
+    target_compile_options(scandium_core PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(scandium_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(scandium_demo src/main.cpp)
+target_link_libraries(scandium_demo PRIVATE scandium_core)
+
+if(SCANDIUM_BUILD_TESTS)
+    enable_testing()
+    add_executable(scandium_tests tests/vec3_tests.cpp)
+    target_link_libraries(scandium_tests PRIVATE scandium_core)
+    add_test(NAME scandium_tests COMMAND scandium_tests)
+endif()
