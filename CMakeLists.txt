@@ -32,4 +32,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_mat4_tests tests/mat4_tests.cpp)
     target_link_libraries(scandium_mat4_tests PRIVATE scandium_core)
     add_test(NAME scandium_mat4_tests COMMAND scandium_mat4_tests)
+
+    add_executable(scandium_aabb_tests tests/aabb_tests.cpp)
+    target_link_libraries(scandium_aabb_tests PRIVATE scandium_core)
+    add_test(NAME scandium_aabb_tests COMMAND scandium_aabb_tests)
 endif()
