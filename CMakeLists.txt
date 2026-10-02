@@ -51,4 +51,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_simulation_tests tests/simulation_tests.cpp)
     target_link_libraries(scandium_simulation_tests PRIVATE scandium_core)
     add_test(NAME scandium_simulation_tests COMMAND scandium_simulation_tests)
+
+    add_executable(scandium_core_tests tests/core_tests.cpp)
+    target_link_libraries(scandium_core_tests PRIVATE scandium_core)
+    add_test(NAME scandium_core_tests COMMAND scandium_core_tests)
 endif()
