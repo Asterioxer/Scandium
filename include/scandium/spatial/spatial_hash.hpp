@@ -44,13 +44,23 @@ private:
     };
 
     struct CellHash {
-        std::size_t operator()(const std::uint64_t value) const noexcept {
-            return std::hash<std::uint64_t>{}(value);
+        std::size_t operator()(const Cell& c) const noexcept {
+            const auto h1 = std::hash<std::int32_t>{}(c.x);
+            const auto h2 = std::hash<std::int32_t>{}(c.y);
+            const auto h3 = std::hash<std::int32_t>{}(c.z);
+            return h1 ^ (h2 + 0x9e3779b9U + (h1 << 6) + (h1 >> 2)) ^
+                   (h3 + 0x9e3779b9U + (h2 << 6) + (h2 >> 2));
+        }
+    };
+
+    struct CellEqual {
+        bool operator()(const Cell& a, const Cell& b) const noexcept {
+            return a.x == b.x && a.y == b.y && a.z == b.z;
         }
     };
 
     float cell_size_;
-    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>, CellHash> cells_;
+    std::unordered_map<Cell, std::vector<std::uint32_t>, CellHash, CellEqual> cells_;
 
     [[nodiscard]] Cell cell(const math::Vec3f& p) const noexcept {
         return {
@@ -60,17 +70,8 @@ private:
         };
     }
 
-    [[nodiscard]] std::uint64_t key(const math::Vec3f& p) const noexcept {
-        const auto c = cell(p);
-        return pack(c.x, c.y, c.z);
-    }
-
-    [[nodiscard]] static std::uint64_t pack(
-        std::int32_t x, std::int32_t y, std::int32_t z) noexcept {
-        const std::uint64_t ux = static_cast<std::uint32_t>(x);
-        const std::uint64_t uy = static_cast<std::uint32_t>(y);
-        const std::uint64_t uz = static_cast<std::uint32_t>(z);
-        return (ux << 32) ^ (uy * 0x9E3779B1ULL) ^ uz;
+    [[nodiscard]] Cell key(const math::Vec3f& p) const noexcept {
+        return cell(p);
     }
 };
 
