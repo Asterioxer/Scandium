@@ -11,6 +11,7 @@ template <typename T>
 class ObjectPool {
 public:
     explicit ObjectPool(std::size_t capacity) {
+        active_.resize(capacity, false);
         storage_.reserve(capacity);
         free_.reserve(capacity);
         for (std::size_t i = 0; i < capacity; ++i) {
@@ -54,7 +55,7 @@ public:
 private:
     std::vector<std::unique_ptr<T>> storage_;
     std::vector<std::size_t> free_;
-    std::vector<bool> active_{storage_.size(), false};
+    std::vector<bool> active_;
 };
 
 } // namespace scandium::core
