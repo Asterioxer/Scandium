@@ -19,39 +19,39 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 - [x] Vec3
 - [x] Mat4
 - [x] Transform composition
-- [ ] Quaternion rotation
+- [x] Quaternion rotation
 - [x] View/projection matrices
-- [ ] Ray primitives
+- [x] Ray primitives
 
 ### Simulation
-- [ ] AABB collision
-- [ ] Spatial hash
-- [ ] Object pooling
-- [ ] Entity-component system
+- [x] AABB collision
+- [x] Spatial hash
+- [x] Object pooling
+- [x] Entity-component system
 
 ### AI
-- [ ] A*
-- [ ] Jump Point Search
-- [ ] Steering behaviors
-- [ ] Multi-agent simulation
+- [x] A*
+- [x] Jump Point Search interface
+- [x] Steering behaviors
+- [x] Multi-agent simulation
 
 ### Performance
-- [ ] Reproducible benchmark harness
-- [ ] Frame-time instrumentation
-- [ ] Allocation tracking
-- [ ] Before/after optimization reports
+- [x] Reproducible benchmark harness
+- [x] Frame-time instrumentation
+- [x] Allocation accounting
+- [x] Before/after optimization reports
 
 ### Live service
-- [ ] Player API
-- [ ] Matchmaking prototype
-- [ ] Leaderboard
+- [x] Player API
+- [x] Match prototype
+- [x] Leaderboard
 - [ ] PostgreSQL persistence
 
 ### Agentic engineering
-- [ ] Repository-aware coding workflow
-- [ ] Automated test/build verification
-- [ ] Benchmark-driven change validation
-- [ ] Human approval gate
+- [x] Repository-aware coding workflow
+- [x] Automated test/build verification
+- [x] Benchmark-driven change validation
+- [x] Human approval gate
 
 ## Engineering principles
 
