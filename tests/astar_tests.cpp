@@ -14,8 +14,10 @@ int main() {
 
     const auto path = AStar::find_path(grid, {0, 0}, {5, 0});
     assert(!path.empty());
-    assert(path.front() == GridNode{0, 0});
-    assert(path.back() == GridNode{5, 0});
+    const GridNode expected_start{0, 0};
+    const GridNode expected_goal{5, 0};
+    assert(path.front() == expected_start);
+    assert(path.back() == expected_goal);
 
     for (const auto node : path) {
         assert(grid.walkable(node));
