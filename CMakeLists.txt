@@ -22,6 +22,9 @@ endif()
 add_executable(scandium_demo src/main.cpp)
 target_link_libraries(scandium_demo PRIVATE scandium_core)
 
+add_executable(scandium_collision_benchmark benchmarks/collision_baseline.cpp)
+target_link_libraries(scandium_collision_benchmark PRIVATE scandium_core)
+
 if(SCANDIUM_BUILD_TESTS)
     enable_testing()
 
@@ -44,4 +47,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_astar_tests tests/astar_tests.cpp)
     target_link_libraries(scandium_astar_tests PRIVATE scandium_core)
     add_test(NAME scandium_astar_tests COMMAND scandium_astar_tests)
+
+    add_executable(scandium_simulation_tests tests/simulation_tests.cpp)
+    target_link_libraries(scandium_simulation_tests PRIVATE scandium_core)
+    add_test(NAME scandium_simulation_tests COMMAND scandium_simulation_tests)
 endif()
