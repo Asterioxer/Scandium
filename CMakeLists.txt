@@ -25,6 +25,9 @@ target_link_libraries(scandium_demo PRIVATE scandium_core)
 add_executable(scandium_collision_benchmark benchmarks/collision_baseline.cpp)
 target_link_libraries(scandium_collision_benchmark PRIVATE scandium_core)
 
+add_executable(scandium_collision_comparison benchmarks/collision_comparison.cpp)
+target_link_libraries(scandium_collision_comparison PRIVATE scandium_core)
+
 if(SCANDIUM_BUILD_TESTS)
     enable_testing()
 
