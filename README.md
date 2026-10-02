@@ -20,7 +20,7 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 - [x] Mat4
 - [x] Transform composition
 - [ ] Quaternion rotation
-- [ ] View/projection matrices
+- [x] View/projection matrices
 - [ ] Ray primitives
 
 ### Simulation
