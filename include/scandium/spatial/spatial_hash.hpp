@@ -26,7 +26,11 @@ public:
         for (int x = cx - 1; x <= cx + 1; ++x) {
             for (int y = cy - 1; y <= cy + 1; ++y) {
                 for (int z = cz - 1; z <= cz + 1; ++z) {
-                    const auto it = cells_.find(pack(x, y, z));
+                    const auto it = cells_.find(Cell{
+                        static_cast<std::int32_t>(x),
+                        static_cast<std::int32_t>(y),
+                        static_cast<std::int32_t>(z)
+                    });
                     if (it != cells_.end()) {
                         result.insert(result.end(), it->second.begin(), it->second.end());
                     }
