@@ -40,4 +40,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_physics_tests tests/physics_tests.cpp)
     target_link_libraries(scandium_physics_tests PRIVATE scandium_core)
     add_test(NAME scandium_physics_tests COMMAND scandium_physics_tests)
+
+    add_executable(scandium_astar_tests tests/astar_tests.cpp)
+    target_link_libraries(scandium_astar_tests PRIVATE scandium_core)
+    add_test(NAME scandium_astar_tests COMMAND scandium_astar_tests)
 endif()
