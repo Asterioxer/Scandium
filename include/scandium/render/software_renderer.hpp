@@ -100,6 +100,10 @@ public:
     [[nodiscard]] std::size_t width() const noexcept { return width_; }
     [[nodiscard]] std::size_t height() const noexcept { return height_; }
 
+    [[nodiscard]] Color pixel(std::size_t x, std::size_t y) const noexcept {
+        return pixels_[y * width_ + x];
+    }
+
 private:
     std::size_t width_;
     std::size_t height_;
