@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -124,20 +125,20 @@ private:
         if (dx != 0) {
             if (!grid.walkable({node.x, node.y + 1}) &&
                 grid.walkable({node.x - dx, node.y + 1})) {
-                result.push_back({-dx, 1});
+                result.push_back({0, 1});
             }
             if (!grid.walkable({node.x, node.y - 1}) &&
                 grid.walkable({node.x - dx, node.y - 1})) {
-                result.push_back({-dx, -1});
+                result.push_back({0, -1});
             }
         } else {
             if (!grid.walkable({node.x + 1, node.y}) &&
                 grid.walkable({node.x + 1, node.y - dy})) {
-                result.push_back({1, -dy});
+                result.push_back({1, 0});
             }
             if (!grid.walkable({node.x - 1, node.y}) &&
                 grid.walkable({node.x - 1, node.y - dy})) {
-                result.push_back({-1, -dy});
+                result.push_back({-1, 0});
             }
         }
 
