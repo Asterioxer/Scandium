@@ -14,7 +14,10 @@ public:
     };
 
     explicit SimulationClock(Config config = {}) noexcept
-        : config_(config) {}
+        : config_{
+              config.fixed_delta_seconds > 0.0 ? config.fixed_delta_seconds
+                                                : (1.0 / 60.0),
+              config.max_steps_per_frame > 0 ? config.max_steps_per_frame : 1} {}
 
     template <typename StepFn>
     std::size_t advance(double frame_delta_seconds, StepFn&& step) {
@@ -27,7 +30,7 @@ public:
         std::size_t steps = 0;
         while (accumulator_seconds_ >= config_.fixed_delta_seconds &&
                steps < config_.max_steps_per_frame) {
-            std::invoke(std::forward<StepFn>(step), config_.fixed_delta_seconds);
+            std::invoke(step, config_.fixed_delta_seconds);
             accumulator_seconds_ -= config_.fixed_delta_seconds;
             ++steps;
             ++total_steps_;
