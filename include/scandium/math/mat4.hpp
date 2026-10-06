@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cmath>
 
 #include "scandium/math/vec3.hpp"
 
@@ -68,7 +67,11 @@ struct Mat4 {
         const float w = (*this)(3, 0) * point.x + (*this)(3, 1) * point.y +
                         (*this)(3, 2) * point.z + (*this)(3, 3);
 
-        if (std::fabs(w) > 1e-6f && std::fabs(w - 1.0f) > 1e-6f) {
+        constexpr auto abs_value = [](float value) constexpr noexcept {
+            return value < 0.0f ? -value : value;
+        };
+
+        if (abs_value(w) > 1e-6f && abs_value(w - 1.0f) > 1e-6f) {
             return {x / w, y / w, z / w};
         }
         return {x, y, z};
