@@ -37,16 +37,7 @@ int main() {
         });
     }
 
-    std::size_t seeking = 0;
-    std::size_t idle = 0;
-    for (const auto& agent : world.agents()) {
-        if (agent.state == AgentState::Seek) {
-            ++seeking;
-        } else if (agent.state == AgentState::Idle) {
-            ++idle;
-        }
-    }
-
+    const auto stats = world.stats();
     const auto nearby = world.nearby(target);
 
     std::cout << std::fixed << std::setprecision(3);
