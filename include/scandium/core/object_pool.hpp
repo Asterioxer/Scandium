@@ -70,7 +70,7 @@ private:
     std::vector<std::unique_ptr<T>> storage_;
     std::vector<std::size_t> free_;
     std::vector<bool> active_;
-    std::unordered_map<T*, std::size_t> indices_;
+    std::unordered_map<const T*, std::size_t> indices_;
 };
 
 } // namespace scandium::core
