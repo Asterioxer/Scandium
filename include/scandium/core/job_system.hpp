@@ -17,9 +17,12 @@ namespace scandium::core {
 // deterministic chunking contract for systems whose work is order-independent.
 class JobSystem {
 public:
-    explicit JobSystem(std::size_t worker_count =
-                           std::max<std::size_t>(1, std::thread::hardware_concurrency()))
+    explicit JobSystem(std::size_t worker_count = 0)
         : stopping_(false) {
+        if (worker_count == 0) {
+            worker_count = std::max<std::size_t>(
+                1, std::thread::hardware_concurrency());
+        }
         workers_.reserve(worker_count);
         for (std::size_t i = 0; i < worker_count; ++i) {
             workers_.emplace_back([this] { worker_loop(); });
