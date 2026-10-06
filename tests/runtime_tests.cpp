@@ -75,7 +75,8 @@ int main() {
 
     assert(engine.clock().total_steps() == 1);
     assert(snapshot.agents.size() == 1);
-    assert(snapshot.agents.front().position.x > -5.0f);
+    assert(engine.world().agents().front().position.x > -5.0f);
+    assert(snapshot.agents.front().position.x == -5.0f);
     assert(last_hash != 0);
     assert(simulation::hash_agent_state(engine.world()) == last_hash);
 
