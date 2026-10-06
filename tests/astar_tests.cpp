@@ -7,6 +7,7 @@ int main() {
     using scandium::navigation::AStar;
     using scandium::navigation::Grid;
     using scandium::navigation::GridNode;
+    using scandium::navigation::JumpPointSearch;
 
     Grid grid{8, 8};
     grid.set_blocked({2, 0}, true);
