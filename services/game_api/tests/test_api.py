@@ -21,3 +21,12 @@ def test_player_score_and_leaderboard():
 def test_match_requires_existing_players():
     response = client.post("/matches", json={"player_ids": [999999]})
     assert response.status_code == 400
+
+
+def test_match_rejects_duplicate_players():
+    player = client.post("/players", json={"name": "DuplicateGuard"}).json()
+    response = client.post(
+        "/matches",
+        json={"player_ids": [player["id"], player["id"]]},
+    )
+    assert response.status_code == 400
