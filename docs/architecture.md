@@ -72,3 +72,12 @@ The runtime facade is intentionally thin: it coordinates systems without owning 
 - TraceCollector exports Chrome trace-compatible timing data.
 
 The architecture is renderer-agnostic and transport-agnostic while exposing the contracts needed by a real multiplayer game.
+
+
+## Multiplayer contract
+
+The networking layer is intentionally split into transport and simulation contracts. `AckWindow` tracks packet sequencing and acknowledgement state; `LockstepSession` buffers per-peer input by simulation tick and exposes a deterministic ready/consume boundary. Socket I/O is deliberately outside the core library, so transport can later be UDP, a relay, or another platform service without changing simulation code.
+
+## Gameplay layer
+
+`game::Arena` demonstrates how engine primitives become an actual game loop: deterministic target selection, movement, attack cooldowns, damage events, elimination events, team scoring, and bounded arena movement. The arena is independently testable and can later be driven by the runtime clock or a network lockstep session.
