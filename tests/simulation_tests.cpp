@@ -17,6 +17,9 @@ int main() {
     assert(world.agents().size() == 2);
     assert(world.agents()[0].position.x > 0.0f);
     assert(world.agents()[0].state == AgentState::Seek);
+    const auto interpolated = world.interpolated_position(world.agents()[0], 0.5f);
+    assert(interpolated.x > 0.0f);
+    assert(interpolated.x < world.agents()[0].position.x);
 
     const auto simulation_stats = world.stats();
     assert(simulation_stats.agent_count == 2);
