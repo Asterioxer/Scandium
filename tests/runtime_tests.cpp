@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <atomic>
 #include <cstddef>
 #include <string>
 
@@ -29,11 +30,9 @@ int main() {
     assert(received == 7);
 
     core::JobSystem jobs(2);
-    std::size_t sum = 0;
-    jobs.parallel_for(100, [&](std::size_t index) { sum += index + 1; });
-    // The callback above intentionally writes a shared value; the job system
-    // contract is for independent work. This test only verifies completion.
-    assert(sum > 0);
+    std::atomic<std::size_t> sum{0};
+    jobs.parallel_for(100, [&](std::size_t index) { sum.fetch_add(index + 1); });
+    assert(sum.load() == 5050);
     assert(jobs.worker_count() == 2);
 
     network::AckWindow window;
