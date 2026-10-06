@@ -25,9 +25,10 @@ struct FrameAdvancedEvent {
 
 class Engine {
 public:
-    explicit Engine(
-        simulation::SimulationClock::Config clock_config = {},
-        std::size_t worker_count = 0)
+    Engine() : Engine(simulation::SimulationClock::Config{}, 0) {}
+
+    explicit Engine(simulation::SimulationClock::Config clock_config,
+                    std::size_t worker_count = 0)
         : clock_(clock_config),
           jobs_(worker_count) {}
 
