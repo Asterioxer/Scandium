@@ -7,6 +7,7 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 ## Current capabilities
 
 - C++20 + CMake project foundation
+- Deterministic simulation runtime with fixed-step ticking and catch-up limits
 - Warning-clean core target configuration
 - Generic Vec3<T> with dot/cross products and normalization
 - Column-major Mat4
@@ -34,6 +35,7 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 - [x] Jump Point Search interface
 - [x] Steering behaviors
 - [x] Multi-agent simulation
+- [x] Deterministic fixed-step simulation clock
 
 ### Performance
 - [x] Reproducible benchmark harness
@@ -60,5 +62,16 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 3. Make complexity explicit.
 4. Test systems independently.
 5. Use agents to accelerate engineering, not replace verification.
+
+## Runtime demo
+
+The default executable now runs a deterministic multi-agent simulation through a fixed-step clock. It reports simulation steps, agent states, spatial-hash proximity, and interpolation state before the math smoke test.
+
+Build and run:
+
+    cmake -S . -B build -DSCANDIUM_BUILD_TESTS=ON
+    cmake --build build --config Release
+    ctest --test-dir build -C Release --output-on-failure
+    build\\Release\\scandium_demo.exe
 
 See docs/architecture.md for the system direction.
