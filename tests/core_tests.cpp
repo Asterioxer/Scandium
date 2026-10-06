@@ -13,6 +13,9 @@ int main() {
     auto* second = pool.acquire();
     assert(first != nullptr);
     assert(second != nullptr);
+    assert(pool.owns(first));
+    Particle external;
+    assert(!pool.owns(&external));
     assert(pool.acquire() == nullptr);
     pool.release(first);
     assert(pool.available() == 1);
