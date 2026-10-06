@@ -27,7 +27,7 @@ class Engine {
 public:
     explicit Engine(
         simulation::SimulationClock::Config clock_config = {},
-        std::size_t worker_count = 1)
+        std::size_t worker_count = 0)
         : clock_(clock_config),
           jobs_(worker_count) {}
 
@@ -62,7 +62,7 @@ public:
     std::size_t advance(double frame_delta_seconds) {
         const auto steps = clock_.advance(frame_delta_seconds, [&](double dt) {
             world_.update_parallel(static_cast<float>(dt), target_, jobs_);
-            events_.publish(simulation::SimulationTickEvent{
+            events_.publish(SimulationTickEvent{
                 clock_.total_steps() + 1,
                 simulation::hash_agent_state(world_)
             });
