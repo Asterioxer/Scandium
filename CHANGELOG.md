@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 — Renderer Flagship
+
+- Added dependency-free software renderer.
+- Added top-down arena frame export with team colors and health bars.
+- Added rendered arena showcase executable.
+
 ## 0.4.0 — Flagship Gameplay and Multiplayer
 
 - Added deterministic Scandium Arena combat simulation.
