@@ -13,7 +13,9 @@ public:
         std::size_t max_steps_per_frame{8};
     };
 
-    explicit SimulationClock(Config config = {}) noexcept
+    SimulationClock() noexcept : SimulationClock(Config{}) {}
+
+    explicit SimulationClock(Config config) noexcept
         : config_{
               config.fixed_delta_seconds > 0.0 ? config.fixed_delta_seconds
                                                 : (1.0 / 60.0),
