@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <optional>
 #include <queue>
 #include <unordered_map>
@@ -12,10 +11,11 @@
 
 namespace scandium::navigation {
 
-// Jump Point Search for the project's 4-connected uniform-cost grid.
-// JPS prunes symmetric straight-line paths and expands only jump points.
-// Returned paths are expanded back into individual grid cells so callers
-// retain the same contract as A*.
+// JPS4 horizontal-first search for uniform-cost, 4-connected grids.
+// The canonical ordering removes symmetric shortest paths by preferring
+// horizontal movement before vertical movement. Horizontal successors are
+// decision points; vertical runs are jumped until a forced neighbor, goal,
+// or dead-end is encountered.
 class JumpPointSearch {
 public:
     [[nodiscard]] static std::vector<GridNode> find_path(
@@ -53,29 +53,29 @@ public:
             const GridNode current = open.top().node;
             open.pop();
 
+            const float current_g = g_score[current];
+
             if (current == goal) {
                 return reconstruct(came_from, current, start);
             }
 
-            const float current_g = g_score[current];
-
-            for (const auto direction : directions_from(grid, current,
-                                                        parent_of(came_from, current, start))) {
-                const auto jump = jump(grid, current, direction, goal);
-                if (!jump.has_value()) {
+            const GridNode parent = parent_of(came_from, current, start);
+            for (const GridNode direction : pruned_directions(grid, current, parent)) {
+                const auto jump_point = jump(grid, current, direction, goal);
+                if (!jump_point.has_value()) {
                     continue;
                 }
 
                 const float distance =
-                    static_cast<float>(std::abs(jump->x - current.x) +
-                                       std::abs(jump->y - current.y));
+                    static_cast<float>(std::abs(jump_point->x - current.x) +
+                                       std::abs(jump_point->y - current.y));
                 const float tentative = current_g + distance;
-                const auto it = g_score.find(*jump);
+                const auto it = g_score.find(*jump_point);
 
                 if (it == g_score.end() || tentative < it->second) {
-                    g_score[*jump] = tentative;
-                    came_from[*jump] = current;
-                    open.push({*jump, tentative + heuristic(*jump, goal)});
+                    g_score[*jump_point] = tentative;
+                    came_from[*jump_point] = current;
+                    open.push({*jump_point, tentative + heuristic(*jump_point, goal)});
                 }
             }
         }
@@ -84,10 +84,6 @@ public:
     }
 
 private:
-    static constexpr GridNode kDirections[] = {
-        {1, 0}, {-1, 0}, {0, 1}, {0, -1}
-    };
-
     static GridNode parent_of(
         const std::unordered_map<GridNode, GridNode, GridNodeHash>& came_from,
         GridNode node,
@@ -97,17 +93,18 @@ private:
         return it == came_from.end() ? fallback : it->second;
     }
 
-    static std::vector<GridNode> directions_from(
+    static std::vector<GridNode> pruned_directions(
         const Grid& grid, GridNode node, GridNode parent) {
 
-        std::vector<GridNode> result;
-        result.reserve(4);
+        static constexpr GridNode directions[] = {
+            {1, 0}, {-1, 0}, {0, 1}, {0, -1}
+        };
 
-        const int dx = node.x - parent.x;
-        const int dy = node.y - parent.y;
+        std::vector<GridNode> result;
+        result.reserve(3);
 
         if (node == parent) {
-            for (const auto direction : kDirections) {
+            for (const auto direction : directions) {
                 if (grid.walkable({node.x + direction.x, node.y + direction.y})) {
                     result.push_back(direction);
                 }
@@ -115,31 +112,38 @@ private:
             return result;
         }
 
-        // Natural direction.
-        const GridNode forward{dx, dy};
-        if (grid.walkable({node.x + dx, node.y + dy})) {
+        const int dx = node.x - parent.x;
+        const int dy = node.y - parent.y;
+
+        if (dx != 0) {
+            // Horizontal-first canonical ordering: all traversable exits
+            // except the cell we just came from remain candidates.
+            for (const auto direction : directions) {
+                if (direction.x == -dx && direction.y == 0) {
+                    continue;
+                }
+                if (grid.walkable({node.x + direction.x, node.y + direction.y})) {
+                    result.push_back(direction);
+                }
+            }
+            return result;
+        }
+
+        // Once moving vertically, continue vertically. Horizontal movement
+        // is reintroduced only when an obstacle creates a forced successor.
+        const GridNode forward{0, dy};
+        if (grid.walkable({node.x, node.y + dy})) {
             result.push_back(forward);
         }
 
-        // Forced neighbors for a 4-connected grid.
-        if (dx != 0) {
-            if (!grid.walkable({node.x, node.y + 1}) &&
-                grid.walkable({node.x - dx, node.y + 1})) {
-                result.push_back({0, 1});
-            }
-            if (!grid.walkable({node.x, node.y - 1}) &&
-                grid.walkable({node.x - dx, node.y - 1})) {
-                result.push_back({0, -1});
-            }
-        } else {
-            if (!grid.walkable({node.x + 1, node.y}) &&
-                grid.walkable({node.x + 1, node.y - dy})) {
-                result.push_back({1, 0});
-            }
-            if (!grid.walkable({node.x - 1, node.y}) &&
-                grid.walkable({node.x - 1, node.y - dy})) {
-                result.push_back({-1, 0});
-            }
+        if (!grid.walkable({node.x - 1, node.y}) &&
+            grid.walkable({node.x - 1, node.y + dy})) {
+            result.push_back({-1, 0});
+        }
+
+        if (!grid.walkable({node.x + 1, node.y}) &&
+            grid.walkable({node.x + 1, node.y + dy})) {
+            result.push_back({1, 0});
         }
 
         return result;
@@ -155,77 +159,33 @@ private:
                 return node;
             }
 
-            const int dx = direction.x;
-            const int dy = direction.y;
-
-            // A straight cardinal jump point has a forced neighbor.
-            if (dx != 0) {
-                if ((!grid.walkable({node.x, node.y + 1}) &&
-                     grid.walkable({node.x - dx, node.y + 1})) ||
-                    (!grid.walkable({node.x, node.y - 1}) &&
-                     grid.walkable({node.x - dx, node.y - 1}))) {
-                    return node;
-                }
-            } else {
-                if ((!grid.walkable({node.x + 1, node.y}) &&
-                     grid.walkable({node.x + 1, node.y - dy})) ||
-                    (!grid.walkable({node.x - 1, node.y}) &&
-                     grid.walkable({node.x - 1, node.y - dy}))) {
-                    return node;
-                }
+            if (direction.x != 0) {
+                // Horizontal cells are canonical decision points in JPS4.
+                return node;
             }
 
-            // A perpendicular jump point makes this node a useful turning point.
-            if (dx != 0) {
-                if (has_jump_ahead(grid, node, {0, 1}, goal) ||
-                    has_jump_ahead(grid, node, {0, -1}, goal)) {
-                    return node;
-                }
-            } else {
-                if (has_jump_ahead(grid, node, {1, 0}, goal) ||
-                    has_jump_ahead(grid, node, {-1, 0}, goal)) {
-                    return node;
-                }
+            if (has_forced_vertical_successor(grid, node, direction.y)) {
+                return node;
             }
 
-            node.x += dx;
-            node.y += dy;
+            node.y += direction.y;
         }
 
         return std::nullopt;
     }
 
-    static bool has_jump_ahead(
-        const Grid& grid, GridNode start, GridNode direction, GridNode goal) {
+    static bool has_forced_vertical_successor(
+        const Grid& grid, GridNode node, int dy) {
 
-        GridNode node{start.x + direction.x, start.y + direction.y};
-        while (grid.walkable(node)) {
-            if (node == goal) {
-                return true;
-            }
+        const bool left_forced =
+            !grid.walkable({node.x - 1, node.y}) &&
+            grid.walkable({node.x - 1, node.y + dy});
 
-            const int dx = direction.x;
-            const int dy = direction.y;
-            if (dx != 0) {
-                if ((!grid.walkable({node.x, node.y + 1}) &&
-                     grid.walkable({node.x - dx, node.y + 1})) ||
-                    (!grid.walkable({node.x, node.y - 1}) &&
-                     grid.walkable({node.x - dx, node.y - 1}))) {
-                    return true;
-                }
-            } else {
-                if ((!grid.walkable({node.x + 1, node.y}) &&
-                     grid.walkable({node.x + 1, node.y - dy})) ||
-                    (!grid.walkable({node.x - 1, node.y}) &&
-                     grid.walkable({node.x - 1, node.y - dy}))) {
-                    return true;
-                }
-            }
+        const bool right_forced =
+            !grid.walkable({node.x + 1, node.y}) &&
+            grid.walkable({node.x + 1, node.y + dy});
 
-            node.x += dx;
-            node.y += dy;
-        }
-        return false;
+        return left_forced || right_forced;
     }
 
     static std::vector<GridNode> reconstruct(
