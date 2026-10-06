@@ -45,6 +45,10 @@ int main() {
     assert(clock.interpolation_alpha() >= 0.0);
     assert(clock.interpolation_alpha() < 1.0);
 
+    SimulationClock invalid_clock{{0.0, 0}};
+    assert(std::abs(invalid_clock.fixed_delta_seconds() - (1.0 / 60.0)) < 1e-12);
+    assert(invalid_clock.advance(1.0 / 60.0, [&](double) {}) == 1);
+
     clock.reset();
     assert(clock.total_steps() == 0);
     assert(clock.accumulated_seconds() == 0.0);
