@@ -73,6 +73,11 @@ Build and run:
     cmake --build build --config Release
     ctest --test-dir build -C Release --output-on-failure
     build\\Release\\scandium_demo.exe
+    build\\Release\\scandium_ascii_demo.exe
+
+### ASCII simulation demo
+
+`scandium_ascii_demo` renders the fixed-step multi-agent simulation in a terminal using interpolated positions. It has no graphics dependency, so it remains portable across CI and local development.
 
 ### Live service with PostgreSQL
 
