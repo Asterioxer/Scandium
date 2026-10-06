@@ -97,6 +97,12 @@ def get_leaderboard() -> list[dict[str, int]]:
 
 @app.post("/matches", response_model=Match, status_code=201)
 def create_match(payload: MatchCreate) -> Match:
+    if len(set(payload.player_ids)) != len(payload.player_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="duplicate player ids are not allowed",
+        )
+
     if database.enabled:
         if not database.players_exist(payload.player_ids):
             raise HTTPException(
