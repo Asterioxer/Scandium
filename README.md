@@ -42,6 +42,7 @@ Scandium is an engineering-focused C++ game-systems laboratory built around dete
 - [x] Frame-time instrumentation
 - [x] Allocation accounting
 - [x] Before/after optimization reports
+- [x] A* versus JPS4 navigation benchmark
 
 ### Live service
 - [x] Player API
