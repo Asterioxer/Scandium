@@ -40,19 +40,19 @@ public:
 
     [[nodiscard]] std::string to_chrome_json() const {
         std::ostringstream out;
-        out << "{"traceEvents":[";
+        out << "{\"traceEvents\":[";
         for (std::size_t i = 0; i < events_.size(); ++i) {
             if (i != 0) out << ',';
             const auto& event = events_[i];
-            out << "{"name":"";
+            out << "{\"name\":\"";
             for (const char character : event.name) {
-                if (character == '"' || character == '\') out << '\';
+                if (character == '"' || character == '\\') out << '\\';
                 out << character;
             }
-            out << "","cat":"scandium","ph":"X","ts":"
+            out << "\",\"cat\":\"scandium\",\"ph\":\"X\",\"ts\":"
                 << event.timestamp_microseconds
-                << ","dur":" << event.duration_microseconds
-                << ","pid":1,"tid":" << event.thread_id << '}';
+                << ",\"dur\":" << event.duration_microseconds
+                << ",\"pid\":1,\"tid\":" << event.thread_id << '}';
         }
         out << "]}";
         return out.str();
