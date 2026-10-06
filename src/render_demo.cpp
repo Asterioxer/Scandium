@@ -24,11 +24,13 @@ int main() {
             0.0f,
             -6.0f + static_cast<float>(i / 4) * 4.0f
         });
-        arena.spawn(game::Team::Bravo, {
-            18.0f - static_cast<float>(i % 4) * 2.0f,
-            0.0f,
-            -6.0f + static_cast<float>(i / 4) * 4.0f
-        });
+        if (i < 4) {
+            arena.spawn(game::Team::Bravo, {
+                18.0f - static_cast<float>(i % 4) * 2.0f,
+                0.0f,
+                -6.0f + static_cast<float>(i / 4) * 4.0f
+            });
+        }
     }
 
     for (int tick = 0; tick < 900 &&
