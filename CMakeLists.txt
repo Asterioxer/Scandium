@@ -34,6 +34,9 @@ target_link_libraries(scandium_collision_comparison PRIVATE scandium_core)
 add_executable(scandium_navigation_comparison benchmarks/navigation_comparison.cpp)
 target_link_libraries(scandium_navigation_comparison PRIVATE scandium_core)
 
+add_executable(scandium_simulation_scale benchmarks/simulation_scale.cpp)
+target_link_libraries(scandium_simulation_scale PRIVATE scandium_core)
+
 if(SCANDIUM_BUILD_TESTS)
     enable_testing()
 
@@ -68,4 +71,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_advanced_tests tests/advanced_tests.cpp)
     target_link_libraries(scandium_advanced_tests PRIVATE scandium_core)
     add_test(NAME scandium_advanced_tests COMMAND scandium_advanced_tests)
+
+    add_executable(scandium_runtime_tests tests/runtime_tests.cpp)
+    target_link_libraries(scandium_runtime_tests PRIVATE scandium_core)
+    add_test(NAME scandium_runtime_tests COMMAND scandium_runtime_tests)
 endif()
