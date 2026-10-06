@@ -31,16 +31,11 @@ int main() {
         arena.step(1.0f / 60.0f);
     }
 
-    std::cout << "SCANDIUM ARENA
-";
-    std::cout << "==============
-";
-    std::cout << "Alpha alive: " << arena.alive_count(Team::Alpha) << '
-';
-    std::cout << "Bravo alive: " << arena.alive_count(Team::Bravo) << '
-';
-    std::cout << "Eliminations: " << eliminations << '
-';
+    std::cout << "SCANDIUM ARENA\n";
+    std::cout << "==============\n";
+    std::cout << "Alpha alive: " << arena.alive_count(Team::Alpha) << '\n';
+    std::cout << "Bravo alive: " << arena.alive_count(Team::Bravo) << '\n';
+    std::cout << "Eliminations: " << eliminations << '\n';
 
     return 0;
 }
