@@ -7,6 +7,7 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["storage"] in {"memory", "postgresql"}
 
 def test_player_score_and_leaderboard():
     player = client.post("/players", json={"name": "Scout"}).json()
