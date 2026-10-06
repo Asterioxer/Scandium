@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include "scandium/navigation/astar.hpp"
+#include "scandium/navigation/jps.hpp"
 
 int main() {
     using scandium::navigation::AStar;
@@ -23,11 +24,31 @@ int main() {
         assert(grid.walkable(node));
     }
 
+
+    const auto jps_path = JumpPointSearch::find_path(grid, {0, 0}, {5, 0});
+    assert(!jps_path.empty());
+    assert(jps_path.front() == expected_start);
+    assert(jps_path.back() == expected_goal);
+    assert(jps_path.size() == path.size());
+    for (const auto node : jps_path) {
+        assert(grid.walkable(node));
+    }
+
     Grid impossible{3, 3};
     impossible.set_blocked({1, 0}, true);
     impossible.set_blocked({1, 1}, true);
     impossible.set_blocked({1, 2}, true);
     assert(AStar::find_path(impossible, {0, 1}, {2, 1}).empty());
+    assert(JumpPointSearch::find_path(impossible, {0, 1}, {2, 1}).empty());
+
+    Grid forced{7, 5};
+    for (int y = 0; y < 4; ++y) {
+        forced.set_blocked({3, y}, true);
+    }
+    const auto forced_path = JumpPointSearch::find_path(forced, {1, 1}, {5, 1});
+    assert(!forced_path.empty());
+    assert(forced_path.front() == GridNode{1, 1});
+    assert(forced_path.back() == GridNode{5, 1});
 
     return 0;
 }
