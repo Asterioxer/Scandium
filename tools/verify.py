@@ -19,8 +19,10 @@ def main():
     run(["cmake", "-S", ".", "-B", str(build), "-DSCANDIUM_BUILD_TESTS=ON"])
     run(["cmake", "--build", str(build), "--parallel"])
     run(["ctest", "--test-dir", str(build), "--output-on-failure"])
-    run([str(build / "scandium_collision_comparison")])
-    run([str(build / "scandium_navigation_comparison")])
+
+    binary_dir = build / "Release" if (build / "Release").exists() else build
+    run([str(binary_dir / "scandium_collision_comparison")])
+    run([str(binary_dir / "scandium_navigation_comparison")])
 
     if args.api:
         service = ROOT / "services" / "game_api"
