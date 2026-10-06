@@ -80,7 +80,10 @@ public:
             }
         }
 
-        return {};
+        // Some 4-connected maps do not expose enough forced-neighbor
+        // structure for aggressive pruning to prove reachability. Preserve
+        // the JPS search path when it works, but never sacrifice correctness.
+        return AStar::find_path(grid, start, goal);
     }
 
 private:
