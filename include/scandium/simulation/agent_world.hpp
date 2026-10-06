@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "scandium/core/job_system.hpp"
 #include "scandium/math/vec3.hpp"
 #include "scandium/simulation/simulation_stats.hpp"
 #include "scandium/spatial/spatial_hash.hpp"
@@ -40,19 +41,21 @@ public:
         }
 
         for (auto& agent : agents_) {
-            agent.previous_position = agent.position;
-            const math::Vec3f delta = target - agent.position;
-            const float distance_sq = delta.length_squared();
-
-            agent.state = distance_sq < 4.0f ? AgentState::Idle : AgentState::Seek;
-
-            if (agent.state == AgentState::Seek) {
-                agent.velocity = delta.normalized() * agent.max_speed;
-                agent.position += agent.velocity * dt;
-            } else {
-                agent.velocity = {};
-            }
+            update_agent(agent, dt, target);
         }
+    }
+
+    void update_parallel(float dt, const math::Vec3f& target,
+                         core::JobSystem& jobs) {
+        spatial_hash_.clear();
+
+        for (const auto& agent : agents_) {
+            spatial_hash_.insert(agent.id, agent.position);
+        }
+
+        jobs.parallel_for(agents_.size(), [&](std::size_t index) {
+            update_agent(agents_[index], dt, target);
+        });
     }
 
     [[nodiscard]] const std::vector<Agent>& agents() const noexcept {
@@ -86,6 +89,22 @@ public:
     }
 
 private:
+    static void update_agent(Agent& agent, float dt,
+                             const math::Vec3f& target) noexcept {
+        agent.previous_position = agent.position;
+        const math::Vec3f delta = target - agent.position;
+        const float distance_sq = delta.length_squared();
+
+        agent.state = distance_sq < 4.0f ? AgentState::Idle : AgentState::Seek;
+
+        if (agent.state == AgentState::Seek) {
+            agent.velocity = delta.normalized() * agent.max_speed;
+            agent.position += agent.velocity * dt;
+        } else {
+            agent.velocity = {};
+        }
+    }
+
     std::vector<Agent> agents_;
     spatial::SpatialHash spatial_hash_;
 };
