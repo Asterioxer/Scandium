@@ -2,7 +2,7 @@
 
 A high-performance C++ game-systems laboratory.
 
-Scandium is an engineering-focused portfolio project built around 3D mathematics, navigation, collision detection, simulation, profiling, and live-service infrastructure.
+Scandium is an engineering-focused C++ game-systems laboratory built around deterministic simulation, 3D mathematics, navigation, collision detection, profiling, and live-service infrastructure.
 
 ## Current capabilities
 
@@ -32,7 +32,7 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 
 ### AI
 - [x] A*
-- [x] Jump Point Search interface
+- [x] Jump Point Search (4-connected)
 - [x] Steering behaviors
 - [x] Multi-agent simulation
 - [x] Deterministic fixed-step simulation clock
@@ -47,7 +47,7 @@ Scandium is an engineering-focused portfolio project built around 3D mathematics
 - [x] Player API
 - [x] Match prototype
 - [x] Leaderboard
-- [ ] PostgreSQL persistence
+- [x] PostgreSQL persistence (optional runtime backend)
 
 ### Agentic engineering
 - [x] Repository-aware coding workflow
@@ -73,5 +73,13 @@ Build and run:
     cmake --build build --config Release
     ctest --test-dir build -C Release --output-on-failure
     build\\Release\\scandium_demo.exe
+
+### Live service with PostgreSQL
+
+The API runs without a database for lightweight tests, or against PostgreSQL when `SCANDIUM_DATABASE_URL` is configured. To launch the full local service stack:
+
+    docker compose -f services/game_api/docker-compose.yml up --build
+
+The service exposes `/health`, player management, scores, leaderboards, and matches.
 
 See docs/architecture.md for the system direction.
