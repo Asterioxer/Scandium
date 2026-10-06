@@ -47,8 +47,10 @@ int main() {
     }
     const auto forced_path = JumpPointSearch::find_path(forced, {1, 1}, {5, 1});
     assert(!forced_path.empty());
-    assert(forced_path.front() == GridNode{1, 1});
-    assert(forced_path.back() == GridNode{5, 1});
+    const GridNode forced_start{1, 1};
+    const GridNode forced_goal{5, 1};
+    assert(forced_path.front() == forced_start);
+    assert(forced_path.back() == forced_goal);
 
     return 0;
 }
