@@ -56,3 +56,19 @@ Every performance or correctness claim should be backed by one of:
 - or an explicit runtime invariant.
 
 The project intentionally keeps rendering separate from simulation so a future renderer can consume state without becoming part of the simulation's correctness boundary.
+
+
+## Flagship runtime
+
+The runtime facade is intentionally thin: it coordinates systems without owning their implementation details.
+
+- JobSystem executes independent CPU work.
+- EventBus provides deterministic synchronous system notifications.
+- SimulationClock defines fixed-step time.
+- Replay stores input commands by simulation tick.
+- State hashing produces a compact regression fingerprint.
+- RenderSnapshot exposes interpolated state to any renderer.
+- AckWindow provides the sequence/ack primitive needed by a future authoritative transport.
+- TraceCollector exports Chrome trace-compatible timing data.
+
+The architecture is renderer-agnostic and transport-agnostic while exposing the contracts needed by a real multiplayer game.
