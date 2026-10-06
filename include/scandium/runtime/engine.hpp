@@ -96,6 +96,10 @@ public:
         return clock_;
     }
 
+    [[nodiscard]] std::size_t worker_count() const noexcept {
+        return jobs_.worker_count();
+    }
+
 private:
     simulation::SimulationClock clock_;
     core::JobSystem jobs_;
