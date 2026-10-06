@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — Flagship Gameplay and Multiplayer
+
+- Added deterministic Scandium Arena combat simulation.
+- Added team targeting, movement, attacks, damage, eliminations, and scoring.
+- Added reliable acknowledgement-window networking primitive.
+- Added deterministic tick-based lockstep input session.
+- Added automated arena and networking tests.
+
 ## 0.3.0 — Flagship Runtime
 
 - Added multithreaded job system and parallel agent simulation.
