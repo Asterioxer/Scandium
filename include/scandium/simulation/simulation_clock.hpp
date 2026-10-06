@@ -36,7 +36,7 @@ public:
         // Prevent a long stall from causing an unbounded catch-up loop.
         if (steps == config_.max_steps_per_frame &&
             accumulator_seconds_ >= config_.fixed_delta_seconds) {
-            accumulator_seconds_ = config_.fixed_delta_seconds;
+            accumulator_seconds_ = config_.fixed_delta_seconds * 0.999999;
         }
 
         return steps;
