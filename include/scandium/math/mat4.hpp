@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 
+#include "scandium/math/quaternion.hpp"
 #include "scandium/math/vec3.hpp"
 
 namespace scandium::math {
@@ -32,6 +33,30 @@ struct Mat4 {
         result(0, 3) = position.x;
         result(1, 3) = position.y;
         result(2, 3) = position.z;
+        return result;
+    }
+
+    static constexpr Mat4 rotation(const Quaternion& quaternion) noexcept {
+        const float xx = quaternion.x * quaternion.x;
+        const float yy = quaternion.y * quaternion.y;
+        const float zz = quaternion.z * quaternion.z;
+        const float xy = quaternion.x * quaternion.y;
+        const float xz = quaternion.x * quaternion.z;
+        const float yz = quaternion.y * quaternion.z;
+        const float wx = quaternion.w * quaternion.x;
+        const float wy = quaternion.w * quaternion.y;
+        const float wz = quaternion.w * quaternion.z;
+
+        Mat4 result = identity();
+        result(0, 0) = 1.0f - 2.0f * (yy + zz);
+        result(0, 1) = 2.0f * (xy - wz);
+        result(0, 2) = 2.0f * (xz + wy);
+        result(1, 0) = 2.0f * (xy + wz);
+        result(1, 1) = 1.0f - 2.0f * (xx + zz);
+        result(1, 2) = 2.0f * (yz - wx);
+        result(2, 0) = 2.0f * (xz - wy);
+        result(2, 1) = 2.0f * (yz + wx);
+        result(2, 2) = 1.0f - 2.0f * (xx + yy);
         return result;
     }
 
