@@ -23,6 +23,7 @@ def main():
     binary_dir = build / "Release" if (build / "Release").exists() else build
     run([str(binary_dir / "scandium_collision_comparison")])
     run([str(binary_dir / "scandium_navigation_comparison")])
+    run([str(binary_dir / "scandium_simulation_scale")])
 
     if args.api:
         service = ROOT / "services" / "game_api"
