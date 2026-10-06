@@ -26,6 +26,12 @@ int main() {
     assert(registry.alive(b));
     registry.destroy(b);
     assert(!registry.alive(b));
+    assert(registry.active_count() == 1);
+    const auto recycled = registry.create();
+    assert(recycled == b);
+    assert(registry.alive(recycled));
+    assert(registry.active_count() == 2);
+    assert(registry.transform(recycled).position.x == 0.0f);
     assert(registry.transform(a).position.x == 1.0f);
 
     return 0;
