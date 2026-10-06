@@ -142,7 +142,7 @@ The engine separates simulation correctness from rendering. Fixed-step updates p
 
 The default executable reports worker count, simulation ticks, agent scale, AI state distribution, spatial-query results, interpolation state, deterministic state hash, replay command count, and profiling events.
 
-Additional executables provide ASCII visualization and reproducible collision, navigation, and scale benchmarks.
+Additional executables provide ASCII visualization, deterministic arena combat, and reproducible collision, navigation, and scale benchmarks.
 
 ## Engineering standard
 
