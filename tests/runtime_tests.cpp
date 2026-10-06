@@ -50,7 +50,7 @@ int main() {
         profiling::TraceScope scope(trace, "unit");
     }
     assert(trace.events().size() == 1);
-    assert(trace.to_chrome_json().find(""ph":"X"") != std::string::npos);
+    assert(trace.to_chrome_json().find("\"ph\":\"X\"") != std::string::npos);
 
     simulation::Replay replay;
     replay.record({1, 4, -2});
