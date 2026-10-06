@@ -22,6 +22,9 @@ endif()
 add_executable(scandium_demo src/main.cpp)
 target_link_libraries(scandium_demo PRIVATE scandium_core)
 
+add_executable(scandium_ascii_demo src/simulation_demo.cpp)
+target_link_libraries(scandium_ascii_demo PRIVATE scandium_core)
+
 add_executable(scandium_collision_benchmark benchmarks/collision_baseline.cpp)
 target_link_libraries(scandium_collision_benchmark PRIVATE scandium_core)
 
