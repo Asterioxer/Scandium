@@ -22,6 +22,7 @@ int main() {
             static_cast<std::uint32_t>(i),
             {x, 0.0f, z},
             {},
+            {},
             AgentState::Idle,
             4.0f
         });
