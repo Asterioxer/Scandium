@@ -82,4 +82,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_arena_tests tests/arena_tests.cpp)
     target_link_libraries(scandium_arena_tests PRIVATE scandium_core)
     add_test(NAME scandium_arena_tests COMMAND scandium_arena_tests)
+
+    add_executable(scandium_network_tests tests/network_tests.cpp)
+    target_link_libraries(scandium_network_tests PRIVATE scandium_core)
+    add_test(NAME scandium_network_tests COMMAND scandium_network_tests)
 endif()
