@@ -2,6 +2,7 @@
 #include <cmath>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "scandium/core/event_bus.hpp"
