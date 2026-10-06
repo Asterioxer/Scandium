@@ -18,6 +18,7 @@ enum class AgentState : std::uint8_t {
 struct Agent {
     std::uint32_t id{};
     math::Vec3f position{};
+    math::Vec3f previous_position{};
     math::Vec3f velocity{};
     AgentState state{AgentState::Idle};
     float max_speed{5.0f};
@@ -39,6 +40,7 @@ public:
         }
 
         for (auto& agent : agents_) {
+            agent.previous_position = agent.position;
             const math::Vec3f delta = target - agent.position;
             const float distance_sq = delta.length_squared();
 
@@ -55,6 +57,12 @@ public:
 
     [[nodiscard]] const std::vector<Agent>& agents() const noexcept {
         return agents_;
+    }
+
+    [[nodiscard]] math::Vec3f interpolated_position(
+        const Agent& agent, float alpha) const noexcept {
+        return agent.previous_position +
+               (agent.position - agent.previous_position) * alpha;
     }
 
     [[nodiscard]] std::vector<std::uint32_t> nearby(
