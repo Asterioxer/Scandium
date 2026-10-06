@@ -18,6 +18,11 @@ int main() {
     assert(world.agents()[0].position.x > 0.0f);
     assert(world.agents()[0].state == AgentState::Seek);
 
+    const auto simulation_stats = world.stats();
+    assert(simulation_stats.agent_count == 2);
+    assert(simulation_stats.seek_count == 2);
+    assert(simulation_stats.idle_count == 0);
+
     SimulationClock clock{{1.0 / 60.0, 8}};
     std::size_t steps = 0;
     const auto first_frame_steps = clock.advance(1.0 / 30.0, [&](double dt) {
