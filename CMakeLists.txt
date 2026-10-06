@@ -25,6 +25,9 @@ target_link_libraries(scandium_demo PRIVATE scandium_core)
 add_executable(scandium_ascii_demo src/simulation_demo.cpp)
 target_link_libraries(scandium_ascii_demo PRIVATE scandium_core)
 
+add_executable(scandium_arena_demo src/arena_demo.cpp)
+target_link_libraries(scandium_arena_demo PRIVATE scandium_core)
+
 add_executable(scandium_collision_benchmark benchmarks/collision_baseline.cpp)
 target_link_libraries(scandium_collision_benchmark PRIVATE scandium_core)
 
@@ -75,4 +78,8 @@ if(SCANDIUM_BUILD_TESTS)
     add_executable(scandium_runtime_tests tests/runtime_tests.cpp)
     target_link_libraries(scandium_runtime_tests PRIVATE scandium_core)
     add_test(NAME scandium_runtime_tests COMMAND scandium_runtime_tests)
+
+    add_executable(scandium_arena_tests tests/arena_tests.cpp)
+    target_link_libraries(scandium_arena_tests PRIVATE scandium_core)
+    add_test(NAME scandium_arena_tests COMMAND scandium_arena_tests)
 endif()
