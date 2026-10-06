@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "scandium/math/vec3.hpp"
+#include "scandium/simulation/simulation_stats.hpp"
 #include "scandium/spatial/spatial_hash.hpp"
 
 namespace scandium::simulation {
@@ -59,6 +60,21 @@ public:
     [[nodiscard]] std::vector<std::uint32_t> nearby(
         const math::Vec3f& position) const {
         return spatial_hash_.query(position);
+    }
+
+    [[nodiscard]] SimulationStats stats() const noexcept {
+        SimulationStats result;
+        result.agent_count = agents_.size();
+
+        for (const auto& agent : agents_) {
+            if (agent.state == AgentState::Seek) {
+                ++result.seek_count;
+            } else if (agent.state == AgentState::Idle) {
+                ++result.idle_count;
+            }
+        }
+
+        return result;
     }
 
 private:
