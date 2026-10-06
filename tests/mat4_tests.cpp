@@ -13,6 +13,7 @@ bool near(float a, float b, float epsilon = 1e-5f) {
 
 int main() {
     using scandium::math::Mat4;
+    using scandium::math::Quaternion;
     using scandium::math::Transform;
     using scandium::math::Vec3f;
 
