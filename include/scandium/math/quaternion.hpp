@@ -21,6 +21,16 @@ struct Quaternion {
         return {std::cos(half), axis.x * s, axis.y * s, axis.z * s};
     }
 
+    Quaternion normalized() const noexcept {
+        const float length_sq = w * w + x * x + y * y + z * z;
+        if (length_sq <= 1e-12f) {
+            return identity();
+        }
+        const float inverse_length = 1.0f / std::sqrt(length_sq);
+        return {w * inverse_length, x * inverse_length,
+                y * inverse_length, z * inverse_length};
+    }
+
     constexpr Quaternion conjugate() const noexcept {
         return {w, -x, -y, -z};
     }
@@ -35,8 +45,9 @@ struct Quaternion {
     }
 
     Vec3f rotate(Vec3f point) const noexcept {
+        const Quaternion unit = normalized();
         const Quaternion p{0.0f, point.x, point.y, point.z};
-        const Quaternion rotated = (*this) * p * conjugate();
+        const Quaternion rotated = unit * p * unit.conjugate();
         return {rotated.x, rotated.y, rotated.z};
     }
 };
