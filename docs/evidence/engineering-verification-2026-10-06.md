@@ -139,7 +139,7 @@ Observed error:
 
 ```
 unable to prepare context: path
-"C:\Users\soham\Scandium\services\game_api\services\game_api"
+"<workspace>\services\game_api\services\game_api"
 not found
 ```
 
