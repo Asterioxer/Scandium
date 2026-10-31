@@ -1,4 +1,4 @@
-name: Build and Test
+name: Build, Test and Verify
 
 on:
   push:
@@ -8,17 +8,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        build_type: [Release]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure
-        run: cmake -S . -B build -DSCANDIUM_BUILD_TESTS=ON
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DSCANDIUM_BUILD_TESTS=ON -DSCANDIUM_BUILD_BENCHMARKS=ON
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
 
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure
+        run: ctest -C ${{ matrix.build_type }} --output-on-failure

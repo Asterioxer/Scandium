@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <memory>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -12,15 +10,13 @@ template <typename T>
 class ObjectPool {
 public:
     explicit ObjectPool(std::size_t capacity) {
+        items_.resize(capacity);
         active_.resize(capacity, false);
-        storage_.reserve(capacity);
         free_.reserve(capacity);
-        indices_.reserve(capacity);
 
-        for (std::size_t i = 0; i < capacity; ++i) {
-            storage_.push_back(std::make_unique<T>());
-            free_.push_back(i);
-            indices_.emplace(storage_.back().get(), i);
+        // Populate free indices in reverse order so index 0 is acquired first
+        for (std::size_t i = capacity; i > 0; --i) {
+            free_.push_back(i - 1);
         }
     }
 
@@ -32,20 +28,15 @@ public:
         const auto index = free_.back();
         free_.pop_back();
         active_[index] = true;
-        return storage_[index].get();
+        return &items_[index];
     }
 
     void release(T* object) {
-        if (object == nullptr) {
+        if (object == nullptr || !owns(object)) {
             return;
         }
 
-        const auto it = indices_.find(object);
-        if (it == indices_.end()) {
-            return;
-        }
-
-        const auto index = it->second;
+        const auto index = static_cast<std::size_t>(object - items_.data());
         if (!active_[index]) {
             return;
         }
@@ -55,7 +46,7 @@ public:
     }
 
     [[nodiscard]] std::size_t capacity() const noexcept {
-        return storage_.size();
+        return items_.size();
     }
 
     [[nodiscard]] std::size_t available() const noexcept {
@@ -63,14 +54,16 @@ public:
     }
 
     [[nodiscard]] bool owns(const T* object) const noexcept {
-        return object != nullptr && indices_.find(object) != indices_.end();
+        if (object == nullptr || items_.empty()) {
+            return false;
+        }
+        return object >= items_.data() && object < (items_.data() + items_.size());
     }
 
 private:
-    std::vector<std::unique_ptr<T>> storage_;
+    std::vector<T> items_;
     std::vector<std::size_t> free_;
     std::vector<bool> active_;
-    std::unordered_map<const T*, std::size_t> indices_;
 };
 
 } // namespace scandium::core

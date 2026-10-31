@@ -40,6 +40,34 @@ int main() {
     }
     assert(found7 && found9);
 
+    // Test clear and re-insert
+    hash.clear();
+    assert(hash.size() == 0);
+    assert(hash.query({2.0f, 2.0f, 2.0f}).empty());
+
+    // Test AdaptiveBroadphase selection logic
+    using scandium::spatial::AdaptiveBroadphase;
+    using scandium::spatial::BroadphaseStrategy;
+
+    AdaptiveBroadphase broadphase{5.0f, 150};
+    assert(broadphase.strategy() == BroadphaseStrategy::Auto);
+    assert(!broadphase.should_use_spatial_hash(50));
+    assert(!broadphase.should_use_spatial_hash(149));
+    assert(broadphase.should_use_spatial_hash(150));
+    assert(broadphase.should_use_spatial_hash(1000));
+
+    broadphase.set_strategy(BroadphaseStrategy::Naive);
+    assert(!broadphase.should_use_spatial_hash(1000));
+
+    broadphase.set_strategy(BroadphaseStrategy::SpatialHash);
+    assert(broadphase.should_use_spatial_hash(10));
+
+    broadphase.set_strategy(BroadphaseStrategy::Auto);
+    broadphase.set_crossover_threshold(300);
+    assert(broadphase.crossover_threshold() == 300);
+    assert(!broadphase.should_use_spatial_hash(250));
+    assert(broadphase.should_use_spatial_hash(300));
+
     (void)Vec3f{};
     return 0;
 }

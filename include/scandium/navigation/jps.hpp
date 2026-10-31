@@ -1,115 +1,220 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <queue>
-#include <unordered_map>
 #include <vector>
 
 #include "scandium/navigation/astar.hpp"
 
 namespace scandium::navigation {
 
-// JPS4 horizontal-first search for uniform-cost, 4-connected grids.
-// The canonical ordering removes symmetric shortest paths by preferring
-// horizontal movement before vertical movement. Horizontal successors are
-// decision points; vertical runs are jumped until a forced neighbor, goal,
-// or dead-end is encountered.
 class JumpPointSearch {
 public:
-    [[nodiscard]] static std::vector<GridNode> find_path(
+    [[nodiscard]] static PathResult find_path_with_metrics(
         const Grid& grid, GridNode start, GridNode goal) {
 
+        const auto start_time = std::chrono::steady_clock::now();
+
         if (!grid.walkable(start) || !grid.walkable(goal)) {
-            return {};
+            return {{}, {0, 0.0f, 0.0, false}};
         }
         if (start == goal) {
-            return {start};
+            return {{start}, {1, 0.0f, 0.0, true}};
         }
 
-        struct OpenEntry {
-            GridNode node;
+        const int w = grid.width();
+        const int h = grid.height();
+        const std::size_t total_cells = static_cast<std::size_t>(w * h);
+
+        struct NodeData {
+            float g_score{std::numeric_limits<float>::infinity()};
+            std::int32_t came_from{-1};
+            std::uint32_t run_id{0};
+            bool closed{false};
+        };
+
+        thread_local std::vector<NodeData> node_records;
+        thread_local std::uint32_t current_run_id = 0;
+
+        if (node_records.size() < total_cells) {
+            node_records.resize(total_cells);
+        }
+        ++current_run_id;
+        if (current_run_id == 0) {
+            std::fill(node_records.begin(), node_records.end(), NodeData{});
+            current_run_id = 1;
+        }
+
+        const auto get_node = [&](std::size_t idx) -> NodeData& {
+            auto& n = node_records[idx];
+            if (n.run_id != current_run_id) {
+                n.run_id = current_run_id;
+                n.g_score = std::numeric_limits<float>::infinity();
+                n.came_from = -1;
+                n.closed = false;
+            }
+            return n;
+        };
+
+        struct OpenItem {
+            std::size_t idx;
             float f_score;
         };
+
         struct Compare {
-            bool operator()(const OpenEntry& a, const OpenEntry& b) const noexcept {
+            bool operator()(const OpenItem& a, const OpenItem& b) const noexcept {
                 return a.f_score > b.f_score;
             }
         };
 
-        std::priority_queue<OpenEntry, std::vector<OpenEntry>, Compare> open;
-        std::unordered_map<GridNode, float, GridNodeHash> g_score;
-        std::unordered_map<GridNode, GridNode, GridNodeHash> came_from;
+        std::priority_queue<OpenItem, std::vector<OpenItem>, Compare> open;
 
-        const auto heuristic = [](GridNode a, GridNode b) {
-            return static_cast<float>(std::abs(a.x - b.x) + std::abs(a.y - b.y));
+        const auto heuristic = [](int x1, int y1, int x2, int y2) noexcept {
+            return static_cast<float>(std::abs(x1 - x2) + std::abs(y1 - y2));
         };
 
-        g_score[start] = 0.0f;
-        open.push({start, heuristic(start, goal)});
+        const std::size_t start_idx = grid.index(start);
+        const std::size_t goal_idx = grid.index(goal);
+
+        auto& start_node = get_node(start_idx);
+        start_node.g_score = 0.0f;
+        open.push({start_idx, heuristic(start.x, start.y, goal.x, goal.y)});
+
+        std::size_t nodes_explored = 0;
+        bool found = false;
 
         while (!open.empty()) {
-            const GridNode current = open.top().node;
+            const auto [curr_idx, f_score] = open.top();
             open.pop();
 
-            const float current_g = g_score[current];
+            auto& curr_node = get_node(curr_idx);
+            if (curr_node.closed) {
+                continue;
+            }
+            curr_node.closed = true;
+            ++nodes_explored;
 
-            if (current == goal) {
-                return reconstruct(came_from, current, start);
+            if (curr_idx == goal_idx) {
+                found = true;
+                break;
             }
 
-            const GridNode parent = parent_of(came_from, current, start);
-            for (const GridNode direction : pruned_directions(grid, current, parent)) {
-                const auto jump_point = jump(grid, current, direction, goal);
-                if (!jump_point.has_value()) {
+            const GridNode current = grid.node_at_index(curr_idx);
+            const std::int32_t parent_idx = curr_node.came_from;
+            const GridNode parent = parent_idx >= 0 ? grid.node_at_index(static_cast<std::size_t>(parent_idx)) : current;
+
+            for (const auto direction : pruned_directions(grid, current, parent)) {
+                const auto jump_node = jump(grid, current, direction, goal);
+                if (!jump_node.has_value()) {
                     continue;
                 }
 
-                const float distance =
-                    static_cast<float>(std::abs(jump_point->x - current.x) +
-                                       std::abs(jump_point->y - current.y));
-                const float tentative = current_g + distance;
-                const auto it = g_score.find(*jump_point);
+                const std::size_t jump_idx = grid.index(*jump_node);
+                auto& j_node = get_node(jump_idx);
+                if (j_node.closed) {
+                    continue;
+                }
 
-                if (it == g_score.end() || tentative < it->second) {
-                    g_score[*jump_point] = tentative;
-                    came_from[*jump_point] = current;
-                    open.push({*jump_point, tentative + heuristic(*jump_point, goal)});
+                const float dist = static_cast<float>(
+                    std::abs(jump_node->x - current.x) + std::abs(jump_node->y - current.y));
+                const float tentative_g = curr_node.g_score + dist;
+
+                if (tentative_g < j_node.g_score) {
+                    j_node.g_score = tentative_g;
+                    j_node.came_from = static_cast<std::int32_t>(curr_idx);
+                    const float f = tentative_g + heuristic(jump_node->x, jump_node->y, goal.x, goal.y);
+                    open.push({jump_idx, f});
                 }
             }
         }
 
-        // Some 4-connected maps do not expose enough forced-neighbor
-        // structure for aggressive pruning to prove reachability. Preserve
-        // the JPS search path when it works, but never sacrifice correctness.
-        return AStar::find_path(grid, start, goal);
+        const auto end_time = std::chrono::steady_clock::now();
+        const double duration_us =
+            std::chrono::duration<double, std::micro>(end_time - start_time).count();
+
+        if (!found) {
+            // For unreachable or complex 4-connected topology where aggressive pruning can exhaust
+            const auto astar_result = AStar::find_path_with_metrics(grid, start, goal);
+            if (astar_result.metrics.path_found) {
+                return astar_result;
+            }
+            return {{}, {nodes_explored, 0.0f, duration_us, false}};
+        }
+
+        // Reconstruct jump points
+        std::vector<GridNode> jump_points;
+        std::size_t curr = goal_idx;
+        while (curr != start_idx) {
+            jump_points.push_back(grid.node_at_index(curr));
+            const auto prev = get_node(curr).came_from;
+            if (prev < 0) {
+                return {{}, {nodes_explored, 0.0f, duration_us, false}};
+            }
+            curr = static_cast<std::size_t>(prev);
+        }
+        jump_points.push_back(start);
+        std::reverse(jump_points.begin(), jump_points.end());
+
+        // Expand straight segments between jump points
+        std::vector<GridNode> path;
+        path.push_back(jump_points.front());
+        for (std::size_t i = 1; i < jump_points.size(); ++i) {
+            const GridNode from = jump_points[i - 1];
+            const GridNode to = jump_points[i];
+            const int step_x = (to.x > from.x) - (to.x < from.x);
+            const int step_y = (to.y > from.y) - (to.y < from.y);
+
+            GridNode step = from;
+            while (step != to) {
+                step.x += step_x;
+                step.y += step_y;
+                path.push_back(step);
+            }
+        }
+
+        const float cost = get_node(goal_idx).g_score;
+        return {std::move(path), {nodes_explored, cost, duration_us, true}};
+    }
+
+    [[nodiscard]] static std::vector<GridNode> find_path(
+        const Grid& grid, GridNode start, GridNode goal) {
+        return find_path_with_metrics(grid, start, goal).path;
     }
 
 private:
-    static GridNode parent_of(
-        const std::unordered_map<GridNode, GridNode, GridNodeHash>& came_from,
-        GridNode node,
-        GridNode fallback) {
+    struct DirectionSet {
+        GridNode dirs[4];
+        std::size_t count{0};
 
-        const auto it = came_from.find(node);
-        return it == came_from.end() ? fallback : it->second;
-    }
+        void push_back(GridNode d) noexcept {
+            dirs[count++] = d;
+        }
 
-    static std::vector<GridNode> pruned_directions(
+        [[nodiscard]] const GridNode* begin() const noexcept { return dirs; }
+        [[nodiscard]] const GridNode* end() const noexcept { return dirs + count; }
+        [[nodiscard]] std::size_t size() const noexcept { return count; }
+        [[nodiscard]] bool empty() const noexcept { return count == 0; }
+    };
+
+    static DirectionSet pruned_directions(
         const Grid& grid, GridNode node, GridNode parent) {
 
-        static constexpr GridNode directions[] = {
+        static constexpr GridNode all_dirs[] = {
             {1, 0}, {-1, 0}, {0, 1}, {0, -1}
         };
 
-        std::vector<GridNode> result;
-        result.reserve(3);
+        DirectionSet result;
 
         if (node == parent) {
-            for (const auto direction : directions) {
-                if (grid.walkable({node.x + direction.x, node.y + direction.y})) {
-                    result.push_back(direction);
+            for (const auto d : all_dirs) {
+                if (grid.walkable(node.x + d.x, node.y + d.y)) {
+                    result.push_back(d);
                 }
             }
             return result;
@@ -119,34 +224,31 @@ private:
         const int dy = node.y - parent.y;
 
         if (dx != 0) {
-            // Horizontal-first canonical ordering: all traversable exits
-            // except the cell we just came from remain candidates.
-            for (const auto direction : directions) {
-                if (direction.x == -dx && direction.y == 0) {
-                    continue;
-                }
-                if (grid.walkable({node.x + direction.x, node.y + direction.y})) {
-                    result.push_back(direction);
-                }
+            const int norm_dx = dx > 0 ? 1 : -1;
+            if (grid.walkable(node.x + norm_dx, node.y)) {
+                result.push_back({norm_dx, 0});
+            }
+            if (!grid.walkable(node.x, node.y - 1) && grid.walkable(node.x + norm_dx, node.y - 1)) {
+                result.push_back({0, -1});
+            }
+            if (!grid.walkable(node.x, node.y + 1) && grid.walkable(node.x + norm_dx, node.y + 1)) {
+                result.push_back({0, 1});
             }
             return result;
         }
 
-        // Once moving vertically, continue vertically. Horizontal movement
-        // is reintroduced only when an obstacle creates a forced successor.
-        const GridNode forward{0, dy};
-        if (grid.walkable({node.x, node.y + dy})) {
-            result.push_back(forward);
-        }
-
-        if (!grid.walkable({node.x - 1, node.y}) &&
-            grid.walkable({node.x - 1, node.y + dy})) {
-            result.push_back({-1, 0});
-        }
-
-        if (!grid.walkable({node.x + 1, node.y}) &&
-            grid.walkable({node.x + 1, node.y + dy})) {
-            result.push_back({1, 0});
+        if (dy != 0) {
+            const int norm_dy = dy > 0 ? 1 : -1;
+            if (grid.walkable(node.x, node.y + norm_dy)) {
+                result.push_back({0, norm_dy});
+            }
+            if (!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + norm_dy)) {
+                result.push_back({-1, 0});
+            }
+            if (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + norm_dy)) {
+                result.push_back({1, 0});
+            }
+            return result;
         }
 
         return result;
@@ -157,76 +259,53 @@ private:
 
         GridNode node{current.x + direction.x, current.y + direction.y};
 
-        while (grid.walkable(node)) {
+        while (grid.walkable(node.x, node.y)) {
             if (node == goal) {
                 return node;
             }
 
             if (direction.x != 0) {
-                // Horizontal cells are canonical decision points in JPS4.
-                return node;
-            }
+                if ((!grid.walkable(node.x, node.y - 1) && grid.walkable(node.x + direction.x, node.y - 1)) ||
+                    (!grid.walkable(node.x, node.y + 1) && grid.walkable(node.x + direction.x, node.y + 1))) {
+                    return node;
+                }
 
-            if (has_forced_vertical_successor(grid, node, direction.y)) {
-                return node;
-            }
+                if (jump_vertical_check(grid, node, 1, goal) ||
+                    jump_vertical_check(grid, node, -1, goal)) {
+                    return node;
+                }
 
-            node.y += direction.y;
+                node.x += direction.x;
+            } else if (direction.y != 0) {
+                if ((!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + direction.y)) ||
+                    (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + direction.y))) {
+                    return node;
+                }
+
+                node.y += direction.y;
+            }
         }
 
         return std::nullopt;
     }
 
-    static bool has_forced_vertical_successor(
-        const Grid& grid, GridNode node, int dy) {
+    static bool jump_vertical_check(
+        const Grid& grid, GridNode start, int dy, GridNode goal) {
 
-        const bool left_forced =
-            !grid.walkable({node.x - 1, node.y}) &&
-            grid.walkable({node.x - 1, node.y + dy});
+        GridNode node{start.x, start.y + dy};
 
-        const bool right_forced =
-            !grid.walkable({node.x + 1, node.y}) &&
-            grid.walkable({node.x + 1, node.y + dy});
-
-        return left_forced || right_forced;
-    }
-
-    static std::vector<GridNode> reconstruct(
-        const std::unordered_map<GridNode, GridNode, GridNodeHash>& came_from,
-        GridNode current,
-        GridNode start) {
-
-        std::vector<GridNode> jump_points{current};
-
-        while (!(current == start)) {
-            const auto it = came_from.find(current);
-            if (it == came_from.end()) {
-                return {};
+        while (grid.walkable(node.x, node.y)) {
+            if (node == goal) {
+                return true;
             }
-            current = it->second;
-            jump_points.push_back(current);
+            if ((!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + dy)) ||
+                (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + dy))) {
+                return true;
+            }
+            node.y += dy;
         }
 
-        std::reverse(jump_points.begin(), jump_points.end());
-
-        std::vector<GridNode> path;
-        path.push_back(jump_points.front());
-
-        for (std::size_t i = 1; i < jump_points.size(); ++i) {
-            const GridNode from = jump_points[i - 1];
-            const GridNode to = jump_points[i];
-            const int dx = (to.x > from.x) - (to.x < from.x);
-            const int dy = (to.y > from.y) - (to.y < from.y);
-
-            GridNode node = from;
-            while (node != to) {
-                node.x += dx;
-                node.y += dy;
-                path.push_back(node);
-            }
-        }
-
-        return path;
+        return false;
     }
 };
 
