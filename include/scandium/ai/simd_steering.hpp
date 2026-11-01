@@ -107,11 +107,12 @@ namespace detail {
 
 #if SCANDIUM_HAS_X86_SIMD
 inline float hsum_ps_sse(__m128 v) noexcept {
-    // [v0+v1, v2+v3, v0+v1, v2+v3]
-    __m128 shuf = _mm_movehdup_ps(v);
-    __m128 sums = _mm_add_ps(v, shuf);
-    shuf = _mm_movehl_ps(shuf, sums);
-    sums = _mm_add_ss(sums, shuf);
+    // Portable baseline SSE1 horizontal sum:
+    // v = [v0, v1, v2, v3]
+    __m128 shuf = _mm_shuffle_ps(v, v, _MM_SHUFFLE(2, 3, 0, 1)); // [v1, v0, v3, v2]
+    __m128 sums = _mm_add_ps(v, shuf);                            // [v0+v1, v1+v0, v2+v3, v3+v2]
+    shuf = _mm_movehl_ps(shuf, sums);                             // [v2+v3, v3+v2, ...]
+    sums = _mm_add_ss(sums, shuf);                                // (v0+v1) + (v2+v3)
     return _mm_cvtss_f32(sums);
 }
 #endif
