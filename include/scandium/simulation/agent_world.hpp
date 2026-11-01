@@ -276,6 +276,12 @@ private:
         next = current;
         next.previous_position = current.position;
 
+        if (current.state == AgentState::Arrived) {
+            next.velocity = {};
+            next.has_active_path = false;
+            return;
+        }
+
         math::Vec3f desired_velocity{};
         bool active_movement = false;
 
