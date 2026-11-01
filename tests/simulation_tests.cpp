@@ -5,7 +5,56 @@
 #include "scandium/simulation/agent_world.hpp"
 #include "scandium/simulation/simulation_clock.hpp"
 
+
+#include "scandium/simulation/compute_pipeline.hpp"
+
+void test_batch_simulation_pipeline() {
+    using namespace scandium::simulation;
+
+    BatchSimulationPipeline pipeline;
+    std::vector<Agent> initial_agents;
+    for (std::size_t i = 0; i < 128; ++i) {
+        initial_agents.push_back({
+            static_cast<std::uint32_t>(i),
+            {static_cast<float>(i), 0.0f, 0.0f},
+            {},
+            {},
+            AgentState::Idle,
+            5.0f,
+            0.5f,
+            {50.0f, 0.0f, 0.0f}
+        });
+    }
+
+    pipeline.upload(initial_agents);
+    assert(pipeline.agent_count() == 128);
+
+    GPUSimulationParams params;
+    params.dt = 1.0f / 60.0f;
+    params.agent_count = 128;
+    params.enable_separation = 1;
+
+    // Step pipeline
+    scandium::core::JobSystem jobs(2);
+    pipeline.step(params, &jobs);
+
+    std::vector<Agent> stepped_agents;
+    pipeline.download(stepped_agents);
+    assert(stepped_agents.size() == 128);
+
+    // Agent 0 started at 0.0, target is 50.0, max_speed 5.0 -> should have moved forward
+    assert(stepped_agents[0].position.x > 0.0f);
+    assert(stepped_agents[0].state == AgentState::Seek);
+
+    // Verify HLSL compute shader export
+    const auto hlsl = BatchSimulationPipeline::get_hlsl_compute_shader();
+    assert(!hlsl.empty());
+    assert(hlsl.find("CSMain") != std::string_view::npos);
+    assert(hlsl.find("numthreads(64, 1, 1)") != std::string_view::npos);
+}
+
 int main() {
+    test_batch_simulation_pipeline();
     using namespace scandium::simulation;
 
     AgentWorld world{5.0f};

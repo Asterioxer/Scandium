@@ -5,6 +5,7 @@
 #include "scandium/math/ray.hpp"
 #include "scandium/physics/ray_intersection.hpp"
 #include "scandium/spatial/spatial_hash.hpp"
+#include "scandium/spatial/linear_bvh.hpp"
 
 int main() {
     using scandium::math::Quaternion;
@@ -125,6 +126,69 @@ int main() {
             std::sort(naive_results.begin(), naive_results.end());
             assert(hash_results == naive_results);
         }
+    }
+
+    // Advancement Verification: LinearBVH spatial indexing and logarithmic raycasting
+    {
+        using scandium::spatial::LinearBVH;
+        LinearBVH bvh;
+        assert(bvh.empty());
+        assert(bvh.node_count() == 0);
+
+        // 1. Single box
+        bvh.build({Aabb{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}});
+        assert(!bvh.empty());
+        assert(bvh.node_count() == 1);
+        auto single_hits = bvh.query(Aabb{{0.5f, 0.5f, 0.5f}, {1.5f, 1.5f, 1.5f}});
+        assert(single_hits.size() == 1);
+        assert(single_hits[0] == 0);
+
+        // 2. Multi-box hierarchy (100 boxes in 3D grid)
+        std::vector<Aabb> scene_boxes;
+        scene_boxes.reserve(100);
+        for (int i = 0; i < 100; ++i) {
+            const float x = static_cast<float>(i % 10) * 4.0f;
+            const float z = static_cast<float>(i / 10) * 4.0f;
+            scene_boxes.push_back(Aabb{{x, 0.0f, z}, {x + 2.0f, 2.0f, z + 2.0f}});
+        }
+
+        bvh.build(scene_boxes);
+        assert(!bvh.empty());
+        assert(bvh.node_count() > 100);
+
+        // Test spatial query against naive
+        const Aabb query_volume{{5.0f, 0.0f, 5.0f}, {15.0f, 2.0f, 15.0f}};
+        auto bvh_results = bvh.query(query_volume);
+        std::sort(bvh_results.begin(), bvh_results.end());
+
+        std::vector<std::uint32_t> naive_bvh_results;
+        for (std::size_t i = 0; i < scene_boxes.size(); ++i) {
+            if (scene_boxes[i].intersects(query_volume)) {
+                naive_bvh_results.push_back(static_cast<std::uint32_t>(i));
+            }
+        }
+        std::sort(naive_bvh_results.begin(), naive_bvh_results.end());
+        assert(bvh_results == naive_bvh_results);
+
+        // Test raycast against naive
+        const Ray test_ray{{-10.0f, 1.0f, 4.0f}, {1.0f, 0.0f, 0.0f}};
+        const auto bvh_hit = bvh.raycast(test_ray);
+        assert(bvh_hit.has_value());
+
+        // Naive closest raycast
+        std::optional<std::uint32_t> closest_naive_id;
+        float closest_naive_dist = std::numeric_limits<float>::infinity();
+        for (std::size_t i = 0; i < scene_boxes.size(); ++i) {
+            const auto hit = intersect_ray_aabb(test_ray, scene_boxes[i]);
+            if (hit.has_value() && *hit < closest_naive_dist) {
+                closest_naive_dist = *hit;
+                closest_naive_id = static_cast<std::uint32_t>(i);
+            }
+        }
+
+        assert(closest_naive_id.has_value());
+        assert(bvh_hit->primitive_id == *closest_naive_id);
+        assert(std::fabs(bvh_hit->distance - closest_naive_dist) < 1e-5f);
     }
 
     (void)Vec3f{};

@@ -141,7 +141,78 @@ void test_parallel_vs_sequential_simulation_equivalence() {
     std::cout << "Passed test_parallel_vs_sequential_simulation_equivalence." << std::endl;
 }
 
+
+#include "scandium/ai/simd_steering.hpp"
+
+void test_simd_steering_soa() {
+    std::cout << "Starting test_simd_steering_soa..." << std::endl;
+    ai::AgentSoA soa;
+    constexpr std::size_t count = 35; // non-power of 2, non-multiple of 4 to test SIMD + scalar tail
+    soa.reserve(count);
+
+    // Place neighbors in a small cluster around (0, 0, 0)
+    for (std::size_t i = 0; i < count; ++i) {
+        const float angle = static_cast<float>(i) * 0.2f;
+        const float dist = 0.5f + static_cast<float>(i % 5) * 0.3f;
+        soa.push_back(std::cos(angle) * dist, 0.0f, std::sin(angle) * dist);
+    }
+    assert(soa.size() == count);
+
+    // Reference agent at (0.1, 0, 0.1)
+    const float px = 0.1f;
+    const float py = 0.0f;
+    const float pz = 0.1f;
+    const float radius = 2.5f;
+    const float max_speed = 6.0f;
+
+    // Test SIMD separation force computation
+    const math::Vec3f force = ai::compute_simd_separation_soa(
+        px, py, pz,
+        soa.x.data(), soa.y.data(), soa.z.data(),
+        soa.size(),
+        radius, max_speed
+    );
+
+    // Force should be directed away from cluster centroid and have length approximately equal to max_speed
+    assert(force.length() > 0.0f);
+    assert(std::abs(force.length() - max_speed) < 1e-4f);
+
+    // Test distance calculation batch
+    std::vector<float> distances(count, 0.0f);
+    ai::simd_compute_distances_soa(
+        px, py, pz,
+        soa.x.data(), soa.y.data(), soa.z.data(),
+        distances.data(),
+        count
+    );
+
+    for (std::size_t i = 0; i < count; ++i) {
+        const float dx = px - soa.x[i];
+        const float dy = py - soa.y[i];
+        const float dz = pz - soa.z[i];
+        const float expected_dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+        assert(std::abs(distances[i] - expected_dist) < 1e-4f);
+    }
+
+    // Test AoS fallback equivalence
+    std::vector<math::Vec3f> aos_neighbors;
+    aos_neighbors.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        aos_neighbors.push_back(soa.get_position(i));
+    }
+
+    const math::Vec3f aos_force = ai::compute_simd_separation_aos(
+        {px, py, pz}, aos_neighbors.data(), aos_neighbors.size(), radius, max_speed
+    );
+    assert(std::abs(aos_force.x - force.x) < 1e-3f);
+    assert(std::abs(aos_force.y - force.y) < 1e-3f);
+    assert(std::abs(aos_force.z - force.z) < 1e-3f);
+
+    std::cout << "Passed test_simd_steering_soa." << std::endl;
+}
+
 int main() {
+    test_simd_steering_soa();
     test_agent_collision_avoidance();
     test_grid_navigation_and_waypoints();
     test_dynamic_obstacle_avoidance();

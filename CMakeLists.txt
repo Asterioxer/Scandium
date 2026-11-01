@@ -70,6 +70,9 @@ if(SCANDIUM_BUILD_BENCHMARKS)
 
     add_executable(scandium_job_system_profiling benchmarks/job_system_profiling.cpp)
     target_link_libraries(scandium_job_system_profiling PRIVATE scandium_core)
+
+    add_executable(scandium_advancements_benchmark benchmarks/advancements_benchmark.cpp)
+    target_link_libraries(scandium_advancements_benchmark PRIVATE scandium_core)
 endif()
 
 if(SCANDIUM_BUILD_TESTS)

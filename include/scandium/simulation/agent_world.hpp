@@ -47,6 +47,12 @@ struct Obstacle {
     float radius{1.0f};
 };
 
+struct AgentWorldSnapshot {
+    std::uint64_t tick{0};
+    std::vector<Agent> agents{};
+    std::vector<Obstacle> obstacles{};
+};
+
 struct WorldConfig {
     bool enable_collision_avoidance{false};
     bool enable_obstacle_avoidance{false};
@@ -87,6 +93,16 @@ public:
 
     [[nodiscard]] const std::vector<Obstacle>& obstacles() const noexcept {
         return obstacles_;
+    }
+
+    [[nodiscard]] AgentWorldSnapshot capture_snapshot(std::uint64_t tick = 0) const {
+        return AgentWorldSnapshot{tick, agents_, obstacles_};
+    }
+
+    void restore_snapshot(const AgentWorldSnapshot& snapshot) {
+        agents_ = snapshot.agents;
+        next_agents_ = snapshot.agents;
+        obstacles_ = snapshot.obstacles;
     }
 
     WorldConfig& config() noexcept {

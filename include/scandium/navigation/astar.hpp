@@ -11,6 +11,11 @@
 
 namespace scandium::navigation {
 
+enum class GridConnectivity {
+    FourWay,  // Cardinal movement (N, S, E, W), cost 1.0, Manhattan heuristic
+    EightWay  // Diagonal movement (N, S, E, W, NE, NW, SE, SW), cost sqrt(2), Octile heuristic
+};
+
 struct GridNode {
     int x{};
     int y{};
@@ -104,6 +109,29 @@ public:
         return result;
     }
 
+    [[nodiscard]] std::vector<GridNode> neighbors_8way(GridNode node) const {
+        static constexpr struct { int dx; int dy; } offsets[8] = {
+            {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+            {1, 1}, {-1, 1}, {1, -1}, {-1, -1}
+        };
+
+        std::vector<GridNode> result;
+        result.reserve(8);
+        for (const auto [dx, dy] : offsets) {
+            const int nx = node.x + dx;
+            const int ny = node.y + dy;
+            if (walkable(nx, ny)) {
+                if (dx != 0 && dy != 0) {
+                    if (!walkable(node.x + dx, node.y) || !walkable(node.x, node.y + dy)) {
+                        continue; // Corner-cutting disallowed
+                    }
+                }
+                result.push_back({nx, ny});
+            }
+        }
+        return result;
+    }
+
     [[nodiscard]] std::size_t index(int x, int y) const noexcept {
         return static_cast<std::size_t>(y * width_ + x);
     }
@@ -158,7 +186,8 @@ private:
 class AStar {
 public:
     [[nodiscard]] static PathResult find_path_with_metrics(
-        const Grid& grid, GridNode start, GridNode goal) {
+        const Grid& grid, GridNode start, GridNode goal,
+        GridConnectivity connectivity = GridConnectivity::FourWay) {
 
         const auto start_time = std::chrono::steady_clock::now();
 
@@ -217,8 +246,16 @@ public:
 
         std::priority_queue<OpenItem, std::vector<OpenItem>, Compare> open;
 
-        const auto heuristic = [](int x1, int y1, int x2, int y2) noexcept {
-            return static_cast<float>(std::abs(x1 - x2) + std::abs(y1 - y2));
+        const auto heuristic = [connectivity](int x1, int y1, int x2, int y2) noexcept -> float {
+            const int dx = std::abs(x1 - x2);
+            const int dy = std::abs(y1 - y2);
+            if (connectivity == GridConnectivity::EightWay) {
+                // Octile distance (admissible and consistent for 8-connected grid)
+                const float min_d = static_cast<float>(std::min(dx, dy));
+                const float max_d = static_cast<float>(std::max(dx, dy));
+                return 0.41421356f * min_d + max_d;
+            }
+            return static_cast<float>(dx + dy);
         };
 
         const std::size_t start_idx = grid.index(start);
@@ -229,8 +266,17 @@ public:
         open.push({start_idx, heuristic(start.x, start.y, goal.x, goal.y)});
 
         std::size_t nodes_explored = 0;
-        static constexpr int dx[4] = {1, -1, 0, 0};
-        static constexpr int dy[4] = {0, 0, 1, -1};
+        struct Step { int dx; int dy; float cost; };
+        static constexpr Step steps_4way[4] = {
+            {1, 0, 1.0f}, {-1, 0, 1.0f}, {0, 1, 1.0f}, {0, -1, 1.0f}
+        };
+        static constexpr Step steps_8way[8] = {
+            {1, 0, 1.0f}, {-1, 0, 1.0f}, {0, 1, 1.0f}, {0, -1, 1.0f},
+            {1, 1, 1.41421356f}, {-1, 1, 1.41421356f}, {1, -1, 1.41421356f}, {-1, -1, 1.41421356f}
+        };
+
+        const Step* steps = (connectivity == GridConnectivity::EightWay) ? steps_8way : steps_4way;
+        const int step_count = (connectivity == GridConnectivity::EightWay) ? 8 : 4;
 
         bool found = false;
 
@@ -254,18 +300,25 @@ public:
             const int cy = static_cast<int>(curr_idx / static_cast<std::size_t>(w));
             const float current_g = curr_node.g_score;
 
-            for (int i = 0; i < 4; ++i) {
-                const int nx = cx + dx[i];
-                const int ny = cy + dy[i];
+            for (int i = 0; i < step_count; ++i) {
+                const int nx = cx + steps[i].dx;
+                const int ny = cy + steps[i].dy;
 
                 if (grid.walkable(nx, ny)) {
+                    // Prevent corner cutting across diagonal walls
+                    if (steps[i].dx != 0 && steps[i].dy != 0) {
+                        if (!grid.walkable(cx + steps[i].dx, cy) || !grid.walkable(cx, cy + steps[i].dy)) {
+                            continue;
+                        }
+                    }
+
                     const std::size_t n_idx = grid.index(nx, ny);
                     auto& neighbor_node = get_node(n_idx);
                     if (neighbor_node.closed) {
                         continue;
                     }
 
-                    const float tentative_g = current_g + 1.0f;
+                    const float tentative_g = current_g + steps[i].cost;
                     if (tentative_g < neighbor_node.g_score) {
                         neighbor_node.g_score = tentative_g;
                         neighbor_node.came_from = static_cast<std::int32_t>(curr_idx);
@@ -303,8 +356,9 @@ public:
     }
 
     [[nodiscard]] static std::vector<GridNode> find_path(
-        const Grid& grid, GridNode start, GridNode goal) {
-        return find_path_with_metrics(grid, start, goal).path;
+        const Grid& grid, GridNode start, GridNode goal,
+        GridConnectivity connectivity = GridConnectivity::FourWay) {
+        return find_path_with_metrics(grid, start, goal, connectivity).path;
     }
 
     [[nodiscard]] static std::vector<GridNode> smooth_path(

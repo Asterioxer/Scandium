@@ -131,12 +131,48 @@ void test_large_map() {
     assert(result.path.back() == GridNode(125, 125));
 }
 
+void test_eight_way_diagonal_navigation() {
+    Grid grid{15, 15};
+
+    // 1. Diagonal open search: from (0, 0) to (10, 10)
+    const auto four_way = AStar::find_path_with_metrics(grid, {0, 0}, {10, 10}, GridConnectivity::FourWay);
+    const auto eight_way = AStar::find_path_with_metrics(grid, {0, 0}, {10, 10}, GridConnectivity::EightWay);
+
+    assert(four_way.metrics.path_found);
+    assert(eight_way.metrics.path_found);
+
+    // 4-way path is staircase (20 steps, cost 20.0)
+    assert(std::fabs(four_way.metrics.path_cost - 20.0f) < 1e-4f);
+    assert(four_way.path.size() == 21);
+
+    // 8-way path is true straight diagonal (10 diagonal steps, cost ~14.142)
+    const float expected_8way_cost = 10.0f * 1.41421356f;
+    assert(std::fabs(eight_way.metrics.path_cost - expected_8way_cost) < 0.05f);
+    assert(eight_way.path.size() == 11);
+
+    // 2. Corner cutting disallowance test
+    // Place walls at (2, 1) and (1, 2)
+    Grid maze{6, 6};
+    maze.set_blocked({2, 1}, true);
+    maze.set_blocked({1, 2}, true);
+
+    const auto corner_path = AStar::find_path_with_metrics(maze, {1, 1}, {2, 2}, GridConnectivity::EightWay);
+    assert(corner_path.metrics.path_found);
+    // Should NOT cut corner: path cost must exceed direct diagonal (must step around or take safe detour)
+    assert(corner_path.metrics.path_cost > 1.5f);
+
+    // 3. Grid 8-way neighbors helper
+    const auto n8 = grid.neighbors_8way({5, 5});
+    assert(n8.size() == 8);
+}
+
 int main() {
     test_basic_pathfinding();
     test_unreachable_and_blocked();
     test_obstacle_changes_and_dynamic_repath();
     test_path_smoothing();
     test_large_map();
+    test_eight_way_diagonal_navigation();
     std::cout << "All navigation tests passed successfully.\n";
     return 0;
 }
