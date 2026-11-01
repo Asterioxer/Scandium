@@ -194,6 +194,27 @@ void test_adaptive_scheduling() {
     std::cout << "Passed test_adaptive_scheduling." << std::endl;
 }
 
+void test_rapid_fire_parallel_for_stress() {
+    std::cout << "Starting test_rapid_fire_parallel_for_stress..." << std::endl;
+    for (const std::size_t workers : {1ULL, 2ULL, 4ULL, 8ULL, 16ULL}) {
+        JobSystem jobs(workers);
+        constexpr std::size_t workload = 3000;
+        constexpr int rounds = 30;
+        std::vector<int> data(workload, 0);
+
+        for (int r = 0; r < rounds; ++r) {
+            jobs.parallel_for(workload, [&](std::size_t idx) {
+                data[idx] += 1;
+            });
+        }
+
+        for (std::size_t i = 0; i < workload; ++i) {
+            assert(data[i] == rounds);
+        }
+    }
+    std::cout << "Passed test_rapid_fire_parallel_for_stress." << std::endl;
+}
+
 int main() {
     test_job_system_basic();
     test_parallel_for_correctness();
@@ -201,6 +222,7 @@ int main() {
     test_exception_resilience();
     test_concurrency_stress();
     test_adaptive_scheduling();
+    test_rapid_fire_parallel_for_stress();
     std::cout << "All job system tests passed successfully.\n";
     return 0;
 }

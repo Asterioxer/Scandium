@@ -68,6 +68,65 @@ int main() {
     assert(!broadphase.should_use_spatial_hash(250));
     assert(broadphase.should_use_spatial_hash(300));
 
+    // Regression Test: SpatialHashDiagnostics and pack/unpack verification
+    {
+        SpatialHash diag_hash{5.0f, 2048};
+        for (std::uint32_t i = 0; i < 500; ++i) {
+            const float x = static_cast<float>(i % 25) * 5.0f - 50.0f;
+            const float z = static_cast<float>(i / 25) * 5.0f - 50.0f;
+            diag_hash.insert(i, {x, 0.0f, z});
+        }
+        const auto diag = diag_hash.diagnostics();
+        assert(diag.total_entries == 500);
+        assert(diag.total_buckets == 2048);
+        assert(diag.occupied_buckets > 0);
+        assert(diag.memory_bytes > 0);
+        assert(diag.empty_bucket_pct > 0.0 && diag.empty_bucket_pct < 100.0);
+    }
+
+    // Regression Test: SpatialHash vs Naive query equivalence at scale (500 entities)
+    {
+        constexpr std::size_t entity_count = 500;
+        const float cell_size = 5.0f;
+        std::vector<Vec3f> positions;
+        positions.reserve(entity_count);
+        for (std::size_t i = 0; i < entity_count; ++i) {
+            const float x = std::sin(static_cast<float>(i) * 0.13f) * 40.0f;
+            const float y = std::cos(static_cast<float>(i) * 0.17f) * 40.0f;
+            const float z = std::sin(static_cast<float>(i) * 0.23f) * 40.0f;
+            positions.push_back({x, y, z});
+        }
+
+        SpatialHash hash{cell_size, entity_count * 2};
+        for (std::size_t i = 0; i < entity_count; ++i) {
+            hash.insert(static_cast<std::uint32_t>(i), positions[i]);
+        }
+
+        for (std::size_t q = 0; q < 50; ++q) {
+            const auto& qpos = positions[q];
+            auto hash_results = hash.query(qpos);
+            std::sort(hash_results.begin(), hash_results.end());
+
+            // Naive 1-ring neighbor search
+            const int qcx = static_cast<int>(std::floor(qpos.x / cell_size));
+            const int qcy = static_cast<int>(std::floor(qpos.y / cell_size));
+            const int qcz = static_cast<int>(std::floor(qpos.z / cell_size));
+
+            std::vector<std::uint32_t> naive_results;
+            for (std::size_t i = 0; i < entity_count; ++i) {
+                const auto& p = positions[i];
+                const int pcx = static_cast<int>(std::floor(p.x / cell_size));
+                const int pcy = static_cast<int>(std::floor(p.y / cell_size));
+                const int pcz = static_cast<int>(std::floor(p.z / cell_size));
+                if (std::abs(pcx - qcx) <= 1 && std::abs(pcy - qcy) <= 1 && std::abs(pcz - qcz) <= 1) {
+                    naive_results.push_back(static_cast<std::uint32_t>(i));
+                }
+            }
+            std::sort(naive_results.begin(), naive_results.end());
+            assert(hash_results == naive_results);
+        }
+    }
+
     (void)Vec3f{};
     return 0;
 }

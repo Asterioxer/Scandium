@@ -64,6 +64,12 @@ if(SCANDIUM_BUILD_BENCHMARKS)
 
     add_executable(scandium_job_system_benchmark benchmarks/job_system_benchmark.cpp)
     target_link_libraries(scandium_job_system_benchmark PRIVATE scandium_core)
+
+    add_executable(scandium_spatial_hash_profiling benchmarks/spatial_hash_profiling.cpp)
+    target_link_libraries(scandium_spatial_hash_profiling PRIVATE scandium_core)
+
+    add_executable(scandium_job_system_profiling benchmarks/job_system_profiling.cpp)
+    target_link_libraries(scandium_job_system_profiling PRIVATE scandium_core)
 endif()
 
 if(SCANDIUM_BUILD_TESTS)

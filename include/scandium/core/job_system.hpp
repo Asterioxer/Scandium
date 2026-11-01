@@ -9,6 +9,9 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -177,36 +180,38 @@ public:
 
         struct SyncToken {
             std::atomic<std::size_t> next_idx{0};
-            std::atomic<std::size_t> active_tasks{0};
-            std::mutex wait_mutex;
-            std::condition_variable wait_cond;
+            std::atomic<std::size_t> finished_tasks{0};
         };
 
         const std::size_t total_chunks = (count + chunk_size - 1) / chunk_size;
         const std::size_t tasks_to_enqueue = total_chunks > 1 ? std::min(total_chunks - 1, workers_.size()) : 0;
 
         SyncToken token;
-        token.active_tasks.store(tasks_to_enqueue + 1, std::memory_order_relaxed);
 
-        for (std::size_t c = 0; c < tasks_to_enqueue; ++c) {
-            enqueue([&token, count, chunk_size, &fn] {
-                while (true) {
-                    const std::size_t begin =
-                        token.next_idx.fetch_add(chunk_size, std::memory_order_relaxed);
-                    if (begin >= count) {
-                        break;
-                    }
-                    const std::size_t end = std::min(count, begin + chunk_size);
-                    for (std::size_t i = begin; i < end; ++i) {
-                        fn(i);
-                    }
+        if (tasks_to_enqueue > 0) {
+            {
+                std::lock_guard lock(mutex_);
+                for (std::size_t c = 0; c < tasks_to_enqueue; ++c) {
+                    jobs_.emplace([&token, count, chunk_size, &fn] {
+                        while (true) {
+                            const std::size_t begin =
+                                token.next_idx.fetch_add(chunk_size, std::memory_order_relaxed);
+                            if (begin >= count) {
+                                break;
+                            }
+                            const std::size_t end = std::min(count, begin + chunk_size);
+                            for (std::size_t i = begin; i < end; ++i) {
+                                fn(i);
+                            }
+                        }
+                        token.finished_tasks.fetch_add(1, std::memory_order_release);
+                    });
                 }
-
-                if (token.active_tasks.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                    std::lock_guard lock(token.wait_mutex);
-                    token.wait_cond.notify_all();
-                }
-            });
+                pending_jobs_ += tasks_to_enqueue;
+            }
+            for (std::size_t i = 0; i < tasks_to_enqueue; ++i) {
+                condition_.notify_one();
+            }
         }
 
         // Caller helps execute chunks directly
@@ -222,29 +227,28 @@ public:
             }
         }
 
-        // Wait for workers to finish all active tasks
-        if (token.active_tasks.fetch_sub(1, std::memory_order_acq_rel) > 1) {
-            while (token.active_tasks.load(std::memory_order_acquire) > 0) {
-                Job job;
-                {
-                    std::unique_lock lock(mutex_);
-                    if (!jobs_.empty()) {
-                        job = std::move(jobs_.front());
-                        jobs_.pop();
-                    }
+        // Wait for workers to finish all enqueued tasks
+        while (token.finished_tasks.load(std::memory_order_acquire) < tasks_to_enqueue) {
+            Job job;
+            {
+                std::unique_lock lock(mutex_);
+                if (!jobs_.empty()) {
+                    job = std::move(jobs_.front());
+                    jobs_.pop();
                 }
-                if (job) {
-                    try {
-                        job();
-                    } catch (...) {
-                    }
-                    --pending_jobs_;
-                } else {
-                    std::unique_lock lock(token.wait_mutex);
-                    token.wait_cond.wait_for(lock, std::chrono::microseconds(25), [&] {
-                        return token.active_tasks.load(std::memory_order_acquire) == 0;
-                    });
+            }
+            if (job) {
+                try {
+                    job();
+                } catch (...) {
                 }
+                --pending_jobs_;
+            } else {
+#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
+                _mm_pause();
+#else
+                std::this_thread::yield();
+#endif
             }
         }
     }

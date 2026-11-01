@@ -89,10 +89,63 @@ void test_dynamic_obstacle_avoidance() {
     assert(dist_to_obstacle > 0.8f);
 }
 
+void test_parallel_vs_sequential_simulation_equivalence() {
+    std::cout << "Starting test_parallel_vs_sequential_simulation_equivalence..." << std::endl;
+    constexpr std::size_t count = 300;
+    constexpr int frames = 30;
+
+    auto make_world = [](bool avoid) {
+        AgentWorld w{4.0f};
+        w.config().enable_collision_avoidance = avoid;
+        w.config().parallel_threshold = 100;
+        w.config().min_agents_per_chunk = 64;
+        for (std::size_t i = 0; i < count; ++i) {
+            const float x = static_cast<float>(i % 20) * 2.0f - 19.0f;
+            const float z = static_cast<float>(i / 20) * 2.0f - 14.0f;
+            w.add_agent({
+                static_cast<std::uint32_t>(i),
+                {x, 0.0f, z}, {}, {},
+                AgentState::Idle, 4.0f, 0.5f
+            });
+        }
+        return w;
+    };
+
+    // Sequential reference run
+    auto seq_world = make_world(true);
+    for (int f = 0; f < frames; ++f) {
+        seq_world.update(1.0f / 60.0f, {0.0f, 0.0f, 10.0f});
+    }
+
+    // Parallel runs across 1, 2, 4, 8, 16 workers
+    for (const std::size_t workers : {1ULL, 2ULL, 4ULL, 8ULL, 16ULL}) {
+        core::JobSystem jobs(workers);
+        auto par_world = make_world(true);
+        for (int f = 0; f < frames; ++f) {
+            par_world.update_parallel(1.0f / 60.0f, {0.0f, 0.0f, 10.0f}, jobs);
+        }
+
+        assert(par_world.agents().size() == seq_world.agents().size());
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto& a_seq = seq_world.agents()[i];
+            const auto& a_par = par_world.agents()[i];
+            assert(a_seq.position.x == a_par.position.x);
+            assert(a_seq.position.y == a_par.position.y);
+            assert(a_seq.position.z == a_par.position.z);
+            assert(a_seq.velocity.x == a_par.velocity.x);
+            assert(a_seq.velocity.y == a_par.velocity.y);
+            assert(a_seq.velocity.z == a_par.velocity.z);
+            assert(a_seq.state == a_par.state);
+        }
+    }
+    std::cout << "Passed test_parallel_vs_sequential_simulation_equivalence." << std::endl;
+}
+
 int main() {
     test_agent_collision_avoidance();
     test_grid_navigation_and_waypoints();
     test_dynamic_obstacle_avoidance();
+    test_parallel_vs_sequential_simulation_equivalence();
     std::cout << "All multi-agent simulation tests passed successfully.\n";
     return 0;
 }
