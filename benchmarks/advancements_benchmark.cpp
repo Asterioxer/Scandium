@@ -256,10 +256,70 @@ void benchmark_batch_compute_pipeline() {
     std::cout << "=======================================================\n";
 }
 
+
+#include "scandium/navigation/flow_field.hpp"
+
+void benchmark_flow_field_crowd_navigation() {
+    std::cout << "\n=======================================================\n";
+    std::cout << "  SCANDIUM ADVANCEMENTS: FLOW FIELD CROWD NAVIGATION   \n";
+    std::cout << "=======================================================\n";
+
+    constexpr int width = 100;
+    constexpr int height = 100;
+    scandium::navigation::FlowField flow(width, height, 1.0f);
+
+    // Add maze walls
+    for (int y = 20; y < 80; y += 15) {
+        for (int x = 10; x < 90; ++x) {
+            if (x % 12 != 0) {
+                flow.set_blocked(x, y, true);
+            }
+        }
+    }
+
+    // 1. Measure Flow Field generation time for 10,000 cells
+    const auto t_gen_start = Clock::now();
+    constexpr int gen_reps = 20;
+    for (int r = 0; r < gen_reps; ++r) {
+        flow.compute({{50, 50}});
+    }
+    const auto t_gen_end = Clock::now();
+    const double gen_ms = std::chrono::duration<double, std::milli>(t_gen_end - t_gen_start).count() / gen_reps;
+
+    std::cout << "Flow Field Generation (10,000 cells): " << std::fixed << std::setprecision(2) << gen_ms << " ms\n";
+
+    // 2. Measure continuous bilinear sampling throughput for 100,000 agents
+    constexpr std::size_t num_agents = 100000;
+    std::vector<scandium::math::Vec3f> agent_positions;
+    agent_positions.reserve(num_agents);
+
+    std::mt19937 rng(777);
+    std::uniform_real_distribution<float> pos_dist(0.0f, 99.0f);
+    for (std::size_t i = 0; i < num_agents; ++i) {
+        agent_positions.push_back({pos_dist(rng), 0.0f, pos_dist(rng)});
+    }
+
+    const auto t_sample_start = Clock::now();
+    std::size_t valid_vectors = 0;
+    for (const auto& pos : agent_positions) {
+        const auto vec = flow.sample(pos);
+        if (vec.length_squared() > 1e-4f) ++valid_vectors;
+        do_not_optimize(vec.x);
+    }
+    const auto t_sample_end = Clock::now();
+    const double sample_ms = std::chrono::duration<double, std::milli>(t_sample_end - t_sample_start).count();
+    const double samples_per_sec = (num_agents / (sample_ms / 1000.0));
+
+    std::cout << "Sampled " << num_agents << " agent flow vectors in " << sample_ms << " ms\n";
+    std::cout << "Sampling Throughput: " << std::setprecision(2) << (samples_per_sec / 1'000'000.0) << " Million agents/sec (O(1) per agent)\n";
+    std::cout << "=======================================================\n";
+}
+
 int main() {
     benchmark_lbvh_vs_naive_raycast();
     benchmark_eight_way_navigation();
     benchmark_simd_steering_separation();
     benchmark_batch_compute_pipeline();
+    benchmark_flow_field_crowd_navigation();
     return 0;
 }

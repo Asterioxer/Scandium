@@ -166,6 +166,49 @@ void test_eight_way_diagonal_navigation() {
     assert(n8.size() == 8);
 }
 
+
+#include "scandium/navigation/flow_field.hpp"
+
+void test_flow_field_navigation() {
+    using namespace scandium::navigation;
+
+    FlowField flow{20, 20, 1.0f};
+
+    // Place goal at (10, 10)
+    flow.compute({{10, 10}});
+
+    assert(flow.get_distance_to_goal(10, 10) == 0.0f);
+    assert(flow.get_distance_to_goal(10, 9) == 1.0f);
+    assert(flow.get_distance_to_goal(9, 10) == 1.0f);
+
+    // Vector at (10, 5) should point towards y+ (south/downhill)
+    const auto v_north = flow.get_flow_at_cell(10, 5);
+    assert(v_north.z > 0.9f);
+
+    // Vector at (5, 10) should point towards x+ (east/downhill)
+    const auto v_west = flow.get_flow_at_cell(5, 10);
+    assert(v_west.x > 0.9f);
+
+    // Test with wall obstacle
+    FlowField maze_flow{10, 10, 1.0f};
+    // Wall across row y = 5 except door at x = 2
+    for (int x = 0; x < 10; ++x) {
+        if (x != 2) {
+            maze_flow.set_blocked(x, 5, true);
+        }
+    }
+    maze_flow.compute({{2, 8}});
+
+    // Cell at (8, 2) must route through door at (2, 5) to reach (2, 8)
+    const float dist_through_door = maze_flow.get_distance_to_goal(8, 2);
+    assert(dist_through_door < FlowField::UNREACHABLE);
+    assert(dist_through_door > 6.0f);
+
+    // Bilinear continuous sample
+    const auto sample_vec = flow.sample({10.0f, 0.0f, 5.0f});
+    assert(sample_vec.length() > 0.9f);
+}
+
 int main() {
     test_basic_pathfinding();
     test_unreachable_and_blocked();
@@ -173,6 +216,7 @@ int main() {
     test_path_smoothing();
     test_large_map();
     test_eight_way_diagonal_navigation();
+    test_flow_field_navigation();
     std::cout << "All navigation tests passed successfully.\n";
     return 0;
 }

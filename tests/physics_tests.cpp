@@ -7,6 +7,66 @@
 #include "scandium/spatial/spatial_hash.hpp"
 #include "scandium/spatial/linear_bvh.hpp"
 
+
+#include "scandium/physics/ccd.hpp"
+
+void test_continuous_collision_detection() {
+    using namespace scandium::physics;
+    using scandium::math::Vec3f;
+
+    // 1. Swept sphere vs sphere head-on
+    {
+        const Vec3f pos_a{0.0f, 0.0f, 0.0f};
+        const Vec3f vel_a{10.0f, 0.0f, 0.0f};
+        const float rad_a = 1.0f;
+
+        const Vec3f pos_b{10.0f, 0.0f, 0.0f};
+        const Vec3f vel_b{-10.0f, 0.0f, 0.0f};
+        const float rad_b = 1.0f;
+
+        const auto contact = swept_sphere_vs_sphere(pos_a, vel_a, rad_a, pos_b, vel_b, rad_b, 1.0f);
+        assert(contact.has_contact);
+        // Distance decreases from 10 to 2 (8 units of relative travel at relative speed 20 -> toi = 8/20 = 0.4)
+        assert(std::fabs(contact.toi - 0.4f) < 1e-4f);
+        assert(contact.normal.x < -0.99f);
+    }
+
+    // 2. Swept sphere vs sphere missing (parallel trajectories)
+    {
+        const Vec3f pos_a{0.0f, 5.0f, 0.0f};
+        const Vec3f vel_a{10.0f, 0.0f, 0.0f};
+        const Vec3f pos_b{0.0f, -5.0f, 0.0f};
+        const Vec3f vel_b{10.0f, 0.0f, 0.0f};
+
+        const auto contact = swept_sphere_vs_sphere(pos_a, vel_a, 1.0f, pos_b, vel_b, 1.0f, 1.0f);
+        assert(!contact.has_contact);
+    }
+
+    // 3. Swept sphere vs stationary AABB
+    {
+        const Vec3f sphere_pos{0.0f, 0.0f, 0.0f};
+        const Vec3f sphere_vel{20.0f, 0.0f, 0.0f};
+        const float sphere_radius = 0.5f;
+
+        const Aabb box{{8.0f, -2.0f, -2.0f}, {12.0f, 2.0f, 2.0f}};
+        const auto contact = swept_sphere_vs_aabb(sphere_pos, sphere_vel, sphere_radius, box, 1.0f);
+        assert(contact.has_contact);
+        // Distance to box min.x (8.0) minus radius (0.5) is 7.5. Speed is 20 -> toi = 7.5/20 = 0.375
+        assert(std::fabs(contact.toi - 0.375f) < 1e-4f);
+        assert(contact.normal.x < -0.99f);
+    }
+
+    // 4. Collision velocity response
+    {
+        Vec3f vel{10.0f, 5.0f, 0.0f};
+        const Vec3f normal{-1.0f, 0.0f, 0.0f};
+        resolve_collision_response(vel, normal, 0.5f, 0.0f);
+        // Normal component should rebound to -5.0
+        assert(std::fabs(vel.x - (-5.0f)) < 1e-4f);
+        assert(std::fabs(vel.y - 5.0f) < 1e-4f);
+    }
+}
+
 int main() {
     using scandium::math::Quaternion;
     using scandium::math::Ray;
@@ -191,6 +251,7 @@ int main() {
         assert(std::fabs(bvh_hit->distance - closest_naive_dist) < 1e-5f);
     }
 
+    test_continuous_collision_detection();
     (void)Vec3f{};
     return 0;
 }
