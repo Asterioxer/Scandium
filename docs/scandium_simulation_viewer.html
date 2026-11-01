@@ -2,29 +2,35 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scandium High-Performance Multi-Agent Simulation Viewer</title>
     <style>
-        body { margin: 0; padding: 0; background: #0f1117; color: #e1e4ea; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        header { background: #161a23; padding: 12px 24px; border-bottom: 1px solid #272d3d; display: flex; align-items: center; justify-content: space-between; }
-        header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: #4da3ff; letter-spacing: 0.5px; }
-        .badge { background: #1f2737; color: #7cb3ff; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; border: 1px solid #2d384e; }
-        .main-container { display: flex; flex: 1; position: relative; overflow: hidden; }
-        #canvas-container { flex: 1; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at center, #141822 0%, #0a0c10 100%); position: relative; }
-        canvas { border: 1px solid #222838; border-radius: 6px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); cursor: crosshair; }
-        .sidebar { width: 340px; background: #131720; border-left: 1px solid #242a3a; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-        .card { background: #191e2b; border: 1px solid #283044; border-radius: 6px; padding: 12px; }
-        .card h3 { margin: 0 0 8px 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #8c97b2; }
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.85rem; }
-        .stat-value { font-family: monospace; font-weight: bold; color: #52c41a; }
-        .controls { background: #161a23; padding: 12px 24px; border-top: 1px solid #272d3d; display: flex; align-items: center; gap: 14px; }
-        button { background: #22293a; border: 1px solid #37425d; color: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.85rem; transition: all 0.15s; }
-        button:hover { background: #2f3850; border-color: #4d5c80; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: #0b0e14; color: #e1e4ea; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background: #11151f; padding: 0 24px; border-bottom: 1px solid #1e2638; display: flex; align-items: center; justify-content: space-between; height: 60px; flex-shrink: 0; }
+        header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; color: #4da3ff; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+        .badge { background: #1a2232; color: #7cb3ff; padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; border: 1px solid #28354d; letter-spacing: 0.3px; }
+        .main-container { display: flex; flex: 1; min-height: 0; overflow: hidden; position: relative; }
+        #canvas-container { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at center, #131825 0%, #07090e 100%); position: relative; padding: 16px; overflow: hidden; }
+        canvas { border: 1px solid #232d42; border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); max-width: 100%; max-height: 100%; aspect-ratio: 1 / 1; object-fit: contain; cursor: crosshair; }
+        .sidebar { width: 360px; min-width: 340px; background: #111520; border-left: 1px solid #1e2638; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; }
+        .sidebar::-webkit-scrollbar { width: 6px; }
+        .sidebar::-webkit-scrollbar-track { background: #111520; }
+        .sidebar::-webkit-scrollbar-thumb { background: #232d42; border-radius: 3px; }
+        .sidebar::-webkit-scrollbar-thumb:hover { background: #344260; }
+        .card { background: #151a27; border: 1px solid #222b3d; border-radius: 6px; padding: 12px 14px; }
+        .card h3 { margin: 0 0 10px 0; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 1px; color: #7e8da8; font-weight: 700; }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 0.82rem; }
+        .stat-value { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600; color: #52c41a; font-variant-numeric: tabular-nums; }
+        .controls { background: #11151f; padding: 0 24px; border-top: 1px solid #1e2638; display: flex; align-items: center; gap: 16px; height: 60px; flex-shrink: 0; }
+        button { background: #1e2638; border: 1px solid #303d58; color: #fff; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.82rem; transition: all 0.15s; }
+        button:hover { background: #2a354e; border-color: #44567c; }
         button.active { background: #177ddc; border-color: #177ddc; }
-        input[type="range"] { flex: 1; accent-color: #177ddc; cursor: pointer; }
+        input[type="range"] { flex: 1; accent-color: #177ddc; cursor: pointer; height: 6px; background: #1a2232; border-radius: 3px; }
         label { font-size: 0.82rem; color: #a6b2cc; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-bottom: 5px; }
-        .legend-color { width: 10px; height: 10px; border-radius: 50%; }
-        .progress-bar-bg { width: 100%; height: 8px; background: #22293a; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 5px; color: #a6b2cc; }
+        .legend-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .progress-bar-bg { width: 100%; height: 6px; background: #1e2638; border-radius: 3px; overflow: hidden; margin-top: 6px; }
         .progress-bar-fill { height: 100%; background: #52c41a; width: 0%; transition: width 0.1s ease; }
     </style>
 </head>
@@ -32,19 +38,19 @@
     <header>
         <div>
             <h1>SCANDIUM MULTI-AGENT ENGINE</h1>
-            <div style="font-size: 0.8rem; color: #8893a7; margin-top: 2px;">Phase 9: Benchmark Validation & Adaptive Performance Viewer</div>
+            <div style="font-size: 0.75rem; color: #7e8da8; margin-top: 1px;">Phase 9: High-Performance Multi-Agent Simulation & Telemetry Viewer</div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
             <span class="badge">MSVC C++20</span>
             <span class="badge">60 Hz FIXED CLOCK</span>
             <span class="badge">64 AGENTS</span>
-            <span class="badge" style="background: #234; color: #52c41a;">ADAPTIVE PARALLEL</span>
+            <span class="badge" style="background: #183321; color: #52c41a; border-color: #245233;">BIT-EXACT DETERMINISM</span>
         </div>
     </header>
 
     <div class="main-container">
         <div id="canvas-container">
-            <canvas id="simCanvas" width="900" height="600"></canvas>
+            <canvas id="simCanvas" width="800" height="800"></canvas>
         </div>
 
         <div class="sidebar">
@@ -70,7 +76,7 @@
                 <div class="stat-row"><span>Avg Tick Duration:</span><span class="stat-value" style="color: #52c41a;">~1.55 ms</span></div>
                 <div class="stat-row"><span>Clock Budget (60Hz):</span><span class="stat-value">16.67 ms (9.3% util)</span></div>
                 <div class="stat-row"><span>Parallel Threshold:</span><span class="stat-value">2,000 agents</span></div>
-                <div class="stat-row"><span>Broadphase:</span><span class="stat-value">Adaptive (<150 direct)</span></div>
+                <div class="stat-row"><span>Broadphase Strategy:</span><span class="stat-value">Adaptive (<150 direct)</span></div>
             </div>
 
             <div class="card">
@@ -94,7 +100,7 @@
 
             <div class="card" id="agent-inspect" style="display: none;">
                 <h3>Selected Agent Inspector</h3>
-                <div id="inspect-content" style="font-size: 0.82rem; font-family: monospace; color: #a6b2cc;"></div>
+                <div id="inspect-content" style="font-size: 0.8rem; font-family: ui-monospace, monospace; color: #a6b2cc; line-height: 1.5;"></div>
             </div>
         </div>
     </div>
@@ -103,9 +109,9 @@
         <button id="btn-play">Pause</button>
         <button id="btn-restart">Restart</button>
         <input type="range" id="timeline" min="0" max="239" value="0">
-        <span id="frame-counter" style="font-family: monospace; min-width: 90px; font-size: 0.85rem;">0 / 239</span>
+        <span id="frame-counter" style="font-family: ui-monospace, monospace; min-width: 90px; font-size: 0.85rem; color: #a0aec0;">0 / 239</span>
         <label>Speed:
-            <select id="sel-speed" style="background: #22293a; color: #fff; border: 1px solid #37425d; padding: 4px; border-radius: 4px; margin-left: 4px;">
+            <select id="sel-speed" style="background: #1e2638; color: #fff; border: 1px solid #303d58; padding: 4px 8px; border-radius: 4px; margin-left: 4px;">
                 <option value="0.5">0.5x</option>
                 <option value="1.0" selected>1.0x</option>
                 <option value="2.0">2.0x</option>
@@ -389,25 +395,31 @@
         let speed = 1.0;
         let selectedAgentId = null;
 
-        // Coordinate transforms
-        const originX = 40.0;
-        const originZ = 40.0;
-        const scale = 10.0;
-        const offsetX = 50;
-        const offsetY = 50;
+        // Dynamic coordinate transformation ensuring perfect alignment & centering
+        function getScaleAndOffset() {
+            const pad = 36;
+            const availW = canvas.width - pad * 2;
+            const availH = canvas.height - pad * 2;
+            const s = Math.min(availW / 80.0, availH / 80.0);
+            const offX = (canvas.width - 80.0 * s) / 2.0;
+            const offY = (canvas.height - 80.0 * s) / 2.0;
+            return { s, offX, offY };
+        }
 
         function worldToScreen(x, z) {
+            const { s, offX, offY } = getScaleAndOffset();
             return {
-                x: (x + originX) * scale + offsetX,
-                y: (z + originZ) * scale + offsetY
+                x: (x + 40.0) * s + offX,
+                y: (z + 40.0) * s + offY
             };
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const { s } = getScaleAndOffset();
 
-            // Draw grid
-            ctx.strokeStyle = '#1b202c';
+            // Draw grid lines
+            ctx.strokeStyle = '#1b212f';
             ctx.lineWidth = 1;
             for (let x = 0; x <= 80; x += 10) {
                 const p1 = worldToScreen(x - 40, -40);
@@ -428,17 +440,18 @@
 
             // Draw walls with doorways
             ctx.fillStyle = '#2d3748';
+            const wallCellPx = Math.ceil(2.0 * s);
             for (let y = 10; y <= 30; ++y) {
                 if (y !== 20 && y !== 21) {
                     const wx1 = -40 + 15 * 2.0;
                     const wz1 = -40 + y * 2.0;
                     const p1 = worldToScreen(wx1, wz1);
-                    ctx.fillRect(p1.x, p1.y, 20, 20);
+                    ctx.fillRect(p1.x, p1.y, wallCellPx, wallCellPx);
 
                     const wx2 = -40 + 25 * 2.0;
                     const wz2 = -40 + y * 2.0;
                     const p2 = worldToScreen(wx2, wz2);
-                    ctx.fillRect(p2.x, p2.y, 20, 20);
+                    ctx.fillRect(p2.x, p2.y, wallCellPx, wallCellPx);
                 }
             }
 
@@ -446,15 +459,21 @@
             if (chkObstacles.checked) {
                 for (const obs of obstacles) {
                     const p = worldToScreen(obs.x, obs.z);
-                    const r = obs.r * scale;
+                    const r = obs.r * s;
 
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-                    ctx.fillStyle = 'rgba(235, 47, 47, 0.25)';
+                    ctx.fillStyle = 'rgba(235, 47, 47, 0.22)';
                     ctx.fill();
                     ctx.strokeStyle = '#ff4d4f';
                     ctx.lineWidth = 2;
                     ctx.stroke();
+
+                    // Central indicator
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff4d4f';
+                    ctx.fill();
                 }
             }
 
@@ -466,11 +485,10 @@
             let idleCount = 0;
             let alertCount = 0;
 
-            // Proximity separation alerts (< 2.2m)
             const minSepSq = 2.2 * 2.2;
             for (let i = 0; i < frameData.agents.length; ++i) {
-                const a1 = frameData.agents[i];
                 for (let j = i + 1; j < frameData.agents.length; ++j) {
+                    const a1 = frameData.agents[i];
                     const a2 = frameData.agents[j];
                     const dx = a1.x - a2.x;
                     const dz = a1.z - a2.z;
@@ -483,7 +501,7 @@
                             ctx.beginPath();
                             ctx.moveTo(p1.x, p1.y);
                             ctx.lineTo(p2.x, p2.y);
-                            ctx.strokeStyle = 'rgba(255, 77, 79, 0.4)';
+                            ctx.strokeStyle = 'rgba(255, 77, 79, 0.45)';
                             ctx.lineWidth = 1;
                             ctx.stroke();
                         }
@@ -520,9 +538,9 @@
                         continue;
                     }
 
-                    if (a.wp && a.wp.length > 1) {
+                    if (a.wp && a.wp.length > 0) {
                         ctx.beginPath();
-                        ctx.strokeStyle = isSelected ? '#ffff00' : 'rgba(77, 163, 255, 0.20)';
+                        ctx.strokeStyle = isSelected ? '#ffff00' : 'rgba(77, 163, 255, 0.25)';
                         ctx.lineWidth = isSelected ? 2.5 : 1;
                         const start = worldToScreen(a.x, a.z);
                         ctx.moveTo(start.x, start.y);
@@ -533,7 +551,6 @@
                         ctx.stroke();
 
                         if (isSelected) {
-                            // Draw destination marker
                             const dest = a.wp[a.wp.length - 1];
                             const dp = worldToScreen(dest[0], dest[1]);
                             ctx.beginPath();
@@ -558,8 +575,8 @@
                 // Separation halo
                 if (chkSeparation.checked && isSelected) {
                     ctx.beginPath();
-                    ctx.arc(sp.x, sp.y, 2.2 * scale, 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(77, 163, 255, 0.3)';
+                    ctx.arc(sp.x, sp.y, 2.2 * s, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(77, 163, 255, 0.35)';
                     ctx.setLineDash([4, 4]);
                     ctx.lineWidth = 1;
                     ctx.stroke();
@@ -581,14 +598,14 @@
                     ctx.beginPath();
                     ctx.moveTo(sp.x, sp.y);
                     ctx.lineTo(arrowEnd.x, arrowEnd.y);
-                    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
                     ctx.lineWidth = 1.5;
                     ctx.stroke();
                 }
 
                 // Agent body
                 ctx.beginPath();
-                ctx.arc(sp.x, sp.y, isSelected ? 6 : 4.5, 0, Math.PI * 2);
+                ctx.arc(sp.x, sp.y, isSelected ? 6.5 : 4.5, 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.fill();
                 ctx.strokeStyle = '#ffffff';
@@ -662,16 +679,45 @@
             speed = parseFloat(e.target.value);
         });
 
+        function updateInspector() {
+            const inspectCard = document.getElementById('agent-inspect');
+            const inspectContent = document.getElementById('inspect-content');
+            if (selectedAgentId === null) {
+                inspectCard.style.display = 'none';
+                return;
+            }
+
+            const frameData = frames[currentFrame];
+            const a = frameData.agents.find(ag => ag.id === selectedAgentId);
+            if (!a) {
+                inspectCard.style.display = 'none';
+                return;
+            }
+
+            inspectCard.style.display = 'block';
+            const distToGoal = a.wp && a.wp.length > 0 ? 
+                Math.hypot(a.x - a.wp[a.wp.length - 1][0], a.z - a.wp[a.wp.length - 1][1]).toFixed(1) + ' m' : '0.0 m';
+            inspectContent.innerHTML = 
+                'ID: ' + a.id + '<br>' +
+                'Pos: (' + a.x.toFixed(2) + ', ' + a.z.toFixed(2) + ')<br>' +
+                'Vel: (' + a.vx.toFixed(2) + ', ' + a.vz.toFixed(2) + ')<br>' +
+                'State: ' + (a.st === 3 ? '<span style="color:#4da3ff">Navigating</span>' : (a.st === 5 ? '<span style="color:#52c41a">Arrived</span>' : '<span style="color:#faad14">Idle</span>')) + '<br>' +
+                'Distance to Goal: ' + distToGoal + '<br>' +
+                'Waypoints Left: ' + (a.wp ? a.wp.length : 0);
+        }
+
         canvas.addEventListener('click', (e) => {
             const rect = canvas.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
 
             const frameData = frames[currentFrame];
             if (!frameData) return;
 
             let closest = null;
-            let closestDist = 20.0;
+            let closestDist = 24.0;
 
             for (const a of frameData.agents) {
                 const sp = worldToScreen(a.x, a.z);
@@ -682,24 +728,8 @@
                 }
             }
 
-            selectedAgentId = closest ? closest.id : null;
-            const inspectCard = document.getElementById('agent-inspect');
-            const inspectContent = document.getElementById('inspect-content');
-
-            if (closest) {
-                inspectCard.style.display = 'block';
-                const distToGoal = closest.wp && closest.wp.length > 0 ? 
-                    Math.hypot(closest.x - closest.wp[closest.wp.length - 1][0], closest.z - closest.wp[closest.wp.length - 1][1]).toFixed(1) + ' m' : '0.0 m';
-                inspectContent.innerHTML = 
-                    'ID: ' + closest.id + '<br>' +
-                    'Pos: (' + closest.x.toFixed(2) + ', ' + closest.z.toFixed(2) + ')<br>' +
-                    'Vel: (' + closest.vx.toFixed(2) + ', ' + closest.vz.toFixed(2) + ')<br>' +
-                    'State: ' + (closest.st === 3 ? '<span style="color:#4da3ff">Navigating</span>' : (closest.st === 5 ? '<span style="color:#52c41a">Arrived</span>' : '<span style="color:#faad14">Idle</span>')) + '<br>' +
-                    'Distance to Goal: ' + distToGoal + '<br>' +
-                    'Waypoints Left: ' + (closest.wp ? closest.wp.length : 0);
-            } else {
-                inspectCard.style.display = 'none';
-            }
+            selectedAgentId = closest ? (selectedAgentId === closest.id ? null : closest.id) : null;
+            updateInspector();
             draw();
         });
 
