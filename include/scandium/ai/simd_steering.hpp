@@ -13,9 +13,23 @@
     #define SCANDIUM_HAS_X86_SIMD 0
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+    #define SCANDIUM_TARGET_AVX2 __attribute__((target("avx2,fma")))
+#else
+    #define SCANDIUM_TARGET_AVX2
+#endif
+
+#include "scandium/core/cpu_features.hpp"
 #include "scandium/math/vec3.hpp"
 
 namespace scandium::ai {
+
+enum class SIMDInstructionSet {
+    Auto,
+    AVX2,
+    SSE,
+    Scalar
+};
 
 /// Structure-of-Arrays (SoA) layout for high-throughput vectorized agent simulation
 struct AgentSoA {
@@ -107,23 +121,71 @@ namespace detail {
 
 #if SCANDIUM_HAS_X86_SIMD
 inline float hsum_ps_sse(__m128 v) noexcept {
-    // Portable baseline SSE1 horizontal sum:
-    // v = [v0, v1, v2, v3]
-    __m128 shuf = _mm_shuffle_ps(v, v, _MM_SHUFFLE(2, 3, 0, 1)); // [v1, v0, v3, v2]
-    __m128 sums = _mm_add_ps(v, shuf);                            // [v0+v1, v1+v0, v2+v3, v3+v2]
-    shuf = _mm_movehl_ps(shuf, sums);                             // [v2+v3, v3+v2, ...]
-    sums = _mm_add_ss(sums, shuf);                                // (v0+v1) + (v2+v3)
+    __m128 shuf = _mm_shuffle_ps(v, v, _MM_SHUFFLE(2, 3, 0, 1));
+    __m128 sums = _mm_add_ps(v, shuf);
+    shuf = _mm_movehl_ps(shuf, sums);
+    sums = _mm_add_ss(sums, shuf);
     return _mm_cvtss_f32(sums);
+}
+
+SCANDIUM_TARGET_AVX2 inline float hsum_ps_avx2(__m256 v) noexcept {
+    __m128 vlow = _mm256_castps256_ps128(v);
+    __m128 vhigh = _mm256_extractf128_ps(v, 1);
+    __m128 vsum = _mm_add_ps(vlow, vhigh);
+    return hsum_ps_sse(vsum);
 }
 #endif
 
-} // namespace detail
+[[nodiscard]] inline math::Vec3f compute_separation_scalar(
+    float px, float py, float pz,
+    const float* __restrict xs,
+    const float* __restrict ys,
+    const float* __restrict zs,
+    std::size_t count,
+    float separation_radius,
+    float max_speed) noexcept {
 
-/**
- * Computes Reynolds separation steering force for an agent against a contiguous SoA neighbor set.
- * Uses 4-wide SSE hardware acceleration on x86/x64 with automatic scalar remainder handling.
- */
-[[nodiscard]] inline math::Vec3f compute_simd_separation_soa(
+    if (count == 0 || separation_radius <= 0.0f) {
+        return {};
+    }
+
+    float total_force_x = 0.0f;
+    float total_force_y = 0.0f;
+    float total_force_z = 0.0f;
+    float valid_neighbors = 0.0f;
+
+    const float radius_sq = separation_radius * separation_radius;
+    constexpr float eps_sq = 1e-5f;
+
+    for (std::size_t i = 0; i < count; ++i) {
+        const float dx = px - xs[i];
+        const float dy = py - ys[i];
+        const float dz = pz - zs[i];
+        const float d_sq = dx * dx + dy * dy + dz * dz;
+
+        if (d_sq > eps_sq && d_sq < radius_sq) {
+            const float dist = std::sqrt(d_sq);
+            const float factor = (separation_radius - dist) / dist;
+            total_force_x += dx * factor;
+            total_force_y += dy * factor;
+            total_force_z += dz * factor;
+            valid_neighbors += 1.0f;
+        }
+    }
+
+    if (valid_neighbors > 0.0f) {
+        math::Vec3f steer{total_force_x, total_force_y, total_force_z};
+        const float len_sq = steer.length_squared();
+        if (len_sq > 1e-6f) {
+            return steer.normalized() * max_speed;
+        }
+    }
+
+    return {};
+}
+
+#if SCANDIUM_HAS_X86_SIMD
+[[nodiscard]] inline math::Vec3f compute_separation_sse(
     float px, float py, float pz,
     const float* __restrict xs,
     const float* __restrict ys,
@@ -145,62 +207,58 @@ inline float hsum_ps_sse(__m128 v) noexcept {
     constexpr float eps_sq = 1e-5f;
 
     std::size_t i = 0;
+    const std::size_t sse_end = count & ~std::size_t{3};
 
-#if SCANDIUM_HAS_X86_SIMD
-    const __m128 v_px = _mm_set1_ps(px);
-    const __m128 v_py = _mm_set1_ps(py);
-    const __m128 v_pz = _mm_set1_ps(pz);
-    const __m128 v_rad = _mm_set1_ps(separation_radius);
-    const __m128 v_rad_sq = _mm_set1_ps(radius_sq);
-    const __m128 v_eps_sq = _mm_set1_ps(eps_sq);
-    const __m128 v_ones = _mm_set1_ps(1.0f);
+    if (sse_end > 0) {
+        const __m128 v_px = _mm_set1_ps(px);
+        const __m128 v_py = _mm_set1_ps(py);
+        const __m128 v_pz = _mm_set1_ps(pz);
+        const __m128 v_rad = _mm_set1_ps(separation_radius);
+        const __m128 v_rad_sq = _mm_set1_ps(radius_sq);
+        const __m128 v_eps_sq = _mm_set1_ps(eps_sq);
+        const __m128 v_ones = _mm_set1_ps(1.0f);
 
-    __m128 acc_fx = _mm_setzero_ps();
-    __m128 acc_fy = _mm_setzero_ps();
-    __m128 acc_fz = _mm_setzero_ps();
-    __m128 acc_cnt = _mm_setzero_ps();
+        __m128 acc_fx = _mm_setzero_ps();
+        __m128 acc_fy = _mm_setzero_ps();
+        __m128 acc_fz = _mm_setzero_ps();
+        __m128 acc_cnt = _mm_setzero_ps();
 
-    const std::size_t simd_end = count & ~std::size_t{3};
-    for (; i < simd_end; i += 4) {
-        const __m128 nx = _mm_loadu_ps(xs + i);
-        const __m128 ny = _mm_loadu_ps(ys + i);
-        const __m128 nz = _mm_loadu_ps(zs + i);
+        for (; i < sse_end; i += 4) {
+            const __m128 nx = _mm_loadu_ps(xs + i);
+            const __m128 ny = _mm_loadu_ps(ys + i);
+            const __m128 nz = _mm_loadu_ps(zs + i);
 
-        const __m128 dx = _mm_sub_ps(v_px, nx);
-        const __m128 dy = _mm_sub_ps(v_py, ny);
-        const __m128 dz = _mm_sub_ps(v_pz, nz);
+            const __m128 dx = _mm_sub_ps(v_px, nx);
+            const __m128 dy = _mm_sub_ps(v_py, ny);
+            const __m128 dz = _mm_sub_ps(v_pz, nz);
 
-        const __m128 d_sq = _mm_add_ps(
-            _mm_mul_ps(dx, dx),
-            _mm_add_ps(_mm_mul_ps(dy, dy), _mm_mul_ps(dz, dz))
-        );
+            const __m128 d_sq = _mm_add_ps(
+                _mm_mul_ps(dx, dx),
+                _mm_add_ps(_mm_mul_ps(dy, dy), _mm_mul_ps(dz, dz))
+            );
 
-        // Mask: eps_sq < d_sq < radius_sq
-        const __m128 mask_gt = _mm_cmpgt_ps(d_sq, v_eps_sq);
-        const __m128 mask_lt = _mm_cmplt_ps(d_sq, v_rad_sq);
-        const __m128 mask = _mm_and_ps(mask_gt, mask_lt);
+            const __m128 mask_gt = _mm_cmpgt_ps(d_sq, v_eps_sq);
+            const __m128 mask_lt = _mm_cmplt_ps(d_sq, v_rad_sq);
+            const __m128 mask = _mm_and_ps(mask_gt, mask_lt);
 
-        // If any lanes matched
-        if (_mm_movemask_ps(mask) != 0) {
-            const __m128 dist = _mm_sqrt_ps(d_sq);
-            // force factor: (radius - dist) / dist
-            const __m128 factor = _mm_div_ps(_mm_sub_ps(v_rad, dist), dist);
-            const __m128 masked_factor = _mm_and_ps(factor, mask);
+            if (_mm_movemask_ps(mask) != 0) {
+                const __m128 dist = _mm_sqrt_ps(d_sq);
+                const __m128 factor = _mm_div_ps(_mm_sub_ps(v_rad, dist), dist);
+                const __m128 masked_factor = _mm_and_ps(factor, mask);
 
-            acc_fx = _mm_add_ps(acc_fx, _mm_mul_ps(dx, masked_factor));
-            acc_fy = _mm_add_ps(acc_fy, _mm_mul_ps(dy, masked_factor));
-            acc_fz = _mm_add_ps(acc_fz, _mm_mul_ps(dz, masked_factor));
-            acc_cnt = _mm_add_ps(acc_cnt, _mm_and_ps(v_ones, mask));
+                acc_fx = _mm_add_ps(acc_fx, _mm_mul_ps(dx, masked_factor));
+                acc_fy = _mm_add_ps(acc_fy, _mm_mul_ps(dy, masked_factor));
+                acc_fz = _mm_add_ps(acc_fz, _mm_mul_ps(dz, masked_factor));
+                acc_cnt = _mm_add_ps(acc_cnt, _mm_and_ps(v_ones, mask));
+            }
         }
+
+        total_force_x += hsum_ps_sse(acc_fx);
+        total_force_y += hsum_ps_sse(acc_fy);
+        total_force_z += hsum_ps_sse(acc_fz);
+        valid_neighbors += hsum_ps_sse(acc_cnt);
     }
 
-    total_force_x = detail::hsum_ps_sse(acc_fx);
-    total_force_y = detail::hsum_ps_sse(acc_fy);
-    total_force_z = detail::hsum_ps_sse(acc_fz);
-    valid_neighbors = detail::hsum_ps_sse(acc_cnt);
-#endif
-
-    // Remainder scalar loop
     for (; i < count; ++i) {
         const float dx = px - xs[i];
         const float dy = py - ys[i];
@@ -228,6 +286,192 @@ inline float hsum_ps_sse(__m128 v) noexcept {
     return {};
 }
 
+SCANDIUM_TARGET_AVX2 [[nodiscard]] inline math::Vec3f compute_separation_avx2(
+    float px, float py, float pz,
+    const float* __restrict xs,
+    const float* __restrict ys,
+    const float* __restrict zs,
+    std::size_t count,
+    float separation_radius,
+    float max_speed) noexcept {
+
+    if (count == 0 || separation_radius <= 0.0f) {
+        return {};
+    }
+
+    float total_force_x = 0.0f;
+    float total_force_y = 0.0f;
+    float total_force_z = 0.0f;
+    float valid_neighbors = 0.0f;
+
+    const float radius_sq = separation_radius * separation_radius;
+    constexpr float eps_sq = 1e-5f;
+
+    std::size_t i = 0;
+    const std::size_t avx_end = count & ~std::size_t{7};
+
+    if (avx_end > 0) {
+        const __m256 v256_px = _mm256_set1_ps(px);
+        const __m256 v256_py = _mm256_set1_ps(py);
+        const __m256 v256_pz = _mm256_set1_ps(pz);
+        const __m256 v256_rad = _mm256_set1_ps(separation_radius);
+        const __m256 v256_rad_sq = _mm256_set1_ps(radius_sq);
+        const __m256 v256_eps_sq = _mm256_set1_ps(eps_sq);
+        const __m256 v256_ones = _mm256_set1_ps(1.0f);
+
+        __m256 acc256_fx = _mm256_setzero_ps();
+        __m256 acc256_fy = _mm256_setzero_ps();
+        __m256 acc256_fz = _mm256_setzero_ps();
+        __m256 acc256_cnt = _mm256_setzero_ps();
+
+        for (; i < avx_end; i += 8) {
+            const __m256 nx = _mm256_loadu_ps(xs + i);
+            const __m256 ny = _mm256_loadu_ps(ys + i);
+            const __m256 nz = _mm256_loadu_ps(zs + i);
+
+            const __m256 dx = _mm256_sub_ps(v256_px, nx);
+            const __m256 dy = _mm256_sub_ps(v256_py, ny);
+            const __m256 dz = _mm256_sub_ps(v256_pz, nz);
+
+            const __m256 d_sq = _mm256_add_ps(
+                _mm256_mul_ps(dx, dx),
+                _mm256_add_ps(_mm256_mul_ps(dy, dy), _mm256_mul_ps(dz, dz))
+            );
+
+            const __m256 mask_gt = _mm256_cmp_ps(d_sq, v256_eps_sq, _CMP_GT_OQ);
+            const __m256 mask_lt = _mm256_cmp_ps(d_sq, v256_rad_sq, _CMP_LT_OQ);
+            const __m256 mask = _mm256_and_ps(mask_gt, mask_lt);
+
+            if (_mm256_movemask_ps(mask) != 0) {
+                const __m256 dist = _mm256_sqrt_ps(d_sq);
+                const __m256 factor = _mm256_div_ps(_mm256_sub_ps(v256_rad, dist), dist);
+                const __m256 masked_factor = _mm256_and_ps(factor, mask);
+
+                acc256_fx = _mm256_add_ps(acc256_fx, _mm256_mul_ps(dx, masked_factor));
+                acc256_fy = _mm256_add_ps(acc256_fy, _mm256_mul_ps(dy, masked_factor));
+                acc256_fz = _mm256_add_ps(acc256_fz, _mm256_mul_ps(dz, masked_factor));
+                acc256_cnt = _mm256_add_ps(acc256_cnt, _mm256_and_ps(v256_ones, mask));
+            }
+        }
+
+        total_force_x += hsum_ps_avx2(acc256_fx);
+        total_force_y += hsum_ps_avx2(acc256_fy);
+        total_force_z += hsum_ps_avx2(acc256_fz);
+        valid_neighbors += hsum_ps_avx2(acc256_cnt);
+    }
+
+    // Remainder via SSE if >= 4 remaining
+    const std::size_t sse_end = count & ~std::size_t{3};
+    if (i < sse_end) {
+        const __m128 v_px = _mm_set1_ps(px);
+        const __m128 v_py = _mm_set1_ps(py);
+        const __m128 v_pz = _mm_set1_ps(pz);
+        const __m128 v_rad = _mm_set1_ps(separation_radius);
+        const __m128 v_rad_sq = _mm_set1_ps(radius_sq);
+        const __m128 v_eps_sq = _mm_set1_ps(eps_sq);
+        const __m128 v_ones = _mm_set1_ps(1.0f);
+
+        __m128 acc_fx = _mm_setzero_ps();
+        __m128 acc_fy = _mm_setzero_ps();
+        __m128 acc_fz = _mm_setzero_ps();
+        __m128 acc_cnt = _mm_setzero_ps();
+
+        for (; i < sse_end; i += 4) {
+            const __m128 nx = _mm_loadu_ps(xs + i);
+            const __m128 ny = _mm_loadu_ps(ys + i);
+            const __m128 nz = _mm_loadu_ps(zs + i);
+
+            const __m128 dx = _mm_sub_ps(v_px, nx);
+            const __m128 dy = _mm_sub_ps(v_py, ny);
+            const __m128 dz = _mm_sub_ps(v_pz, nz);
+
+            const __m128 d_sq = _mm_add_ps(
+                _mm_mul_ps(dx, dx),
+                _mm_add_ps(_mm_mul_ps(dy, dy), _mm_mul_ps(dz, dz))
+            );
+
+            const __m128 mask_gt = _mm_cmpgt_ps(d_sq, v_eps_sq);
+            const __m128 mask_lt = _mm_cmplt_ps(d_sq, v_rad_sq);
+            const __m128 mask = _mm_and_ps(mask_gt, mask_lt);
+
+            if (_mm_movemask_ps(mask) != 0) {
+                const __m128 dist = _mm_sqrt_ps(d_sq);
+                const __m128 factor = _mm_div_ps(_mm_sub_ps(v_rad, dist), dist);
+                const __m128 masked_factor = _mm_and_ps(factor, mask);
+
+                acc_fx = _mm_add_ps(acc_fx, _mm_mul_ps(dx, masked_factor));
+                acc_fy = _mm_add_ps(acc_fy, _mm_mul_ps(dy, masked_factor));
+                acc_fz = _mm_add_ps(acc_fz, _mm_mul_ps(dz, masked_factor));
+                acc_cnt = _mm_add_ps(acc_cnt, _mm_and_ps(v_ones, mask));
+            }
+        }
+
+        total_force_x += hsum_ps_sse(acc_fx);
+        total_force_y += hsum_ps_sse(acc_fy);
+        total_force_z += hsum_ps_sse(acc_fz);
+        valid_neighbors += hsum_ps_sse(acc_cnt);
+    }
+
+    // Scalar remainder
+    for (; i < count; ++i) {
+        const float dx = px - xs[i];
+        const float dy = py - ys[i];
+        const float dz = pz - zs[i];
+        const float d_sq = dx * dx + dy * dy + dz * dz;
+
+        if (d_sq > eps_sq && d_sq < radius_sq) {
+            const float dist = std::sqrt(d_sq);
+            const float factor = (separation_radius - dist) / dist;
+            total_force_x += dx * factor;
+            total_force_y += dy * factor;
+            total_force_z += dz * factor;
+            valid_neighbors += 1.0f;
+        }
+    }
+
+    if (valid_neighbors > 0.0f) {
+        math::Vec3f steer{total_force_x, total_force_y, total_force_z};
+        const float len_sq = steer.length_squared();
+        if (len_sq > 1e-6f) {
+            return steer.normalized() * max_speed;
+        }
+    }
+
+    return {};
+}
+#endif
+
+} // namespace detail
+
+/**
+ * Computes Reynolds separation steering force for an agent against a contiguous SoA neighbor set.
+ * Dynamically dispatches between AVX2, SSE, and Scalar depending on runtime CPU features.
+ */
+[[nodiscard]] inline math::Vec3f compute_simd_separation_soa(
+    float px, float py, float pz,
+    const float* __restrict xs,
+    const float* __restrict ys,
+    const float* __restrict zs,
+    std::size_t count,
+    float separation_radius,
+    float max_speed,
+    SIMDInstructionSet instruction_set = SIMDInstructionSet::Auto) noexcept {
+
+#if SCANDIUM_HAS_X86_SIMD
+    if (instruction_set == SIMDInstructionSet::AVX2 ||
+        (instruction_set == SIMDInstructionSet::Auto && core::CPUFeatures::has_avx2())) {
+        return detail::compute_separation_avx2(px, py, pz, xs, ys, zs, count, separation_radius, max_speed);
+    }
+
+    if (instruction_set == SIMDInstructionSet::SSE ||
+        (instruction_set == SIMDInstructionSet::Auto && core::CPUFeatures::has_sse())) {
+        return detail::compute_separation_sse(px, py, pz, xs, ys, zs, count, separation_radius, max_speed);
+    }
+#endif
+
+    return detail::compute_separation_scalar(px, py, pz, xs, ys, zs, count, separation_radius, max_speed);
+}
+
 /**
  * Computes distance from a reference origin to an array of points in parallel.
  * Stores result in out_distances.
@@ -245,22 +489,24 @@ inline void simd_compute_distances_soa(
     std::size_t i = 0;
 
 #if SCANDIUM_HAS_X86_SIMD
-    const __m128 v_px = _mm_set1_ps(px);
-    const __m128 v_py = _mm_set1_ps(py);
-    const __m128 v_pz = _mm_set1_ps(pz);
+    if (core::CPUFeatures::has_sse()) {
+        const std::size_t sse_end = count & ~std::size_t{3};
+        const __m128 v_px = _mm_set1_ps(px);
+        const __m128 v_py = _mm_set1_ps(py);
+        const __m128 v_pz = _mm_set1_ps(pz);
 
-    const std::size_t simd_end = count & ~std::size_t{3};
-    for (; i < simd_end; i += 4) {
-        const __m128 dx = _mm_sub_ps(v_px, _mm_loadu_ps(xs + i));
-        const __m128 dy = _mm_sub_ps(v_py, _mm_loadu_ps(ys + i));
-        const __m128 dz = _mm_sub_ps(v_pz, _mm_loadu_ps(zs + i));
+        for (; i < sse_end; i += 4) {
+            const __m128 dx = _mm_sub_ps(v_px, _mm_loadu_ps(xs + i));
+            const __m128 dy = _mm_sub_ps(v_py, _mm_loadu_ps(ys + i));
+            const __m128 dz = _mm_sub_ps(v_pz, _mm_loadu_ps(zs + i));
 
-        const __m128 d_sq = _mm_add_ps(
-            _mm_mul_ps(dx, dx),
-            _mm_add_ps(_mm_mul_ps(dy, dy), _mm_mul_ps(dz, dz))
-        );
-        const __m128 dist = _mm_sqrt_ps(d_sq);
-        _mm_storeu_ps(out_distances + i, dist);
+            const __m128 d_sq = _mm_add_ps(
+                _mm_mul_ps(dx, dx),
+                _mm_add_ps(_mm_mul_ps(dy, dy), _mm_mul_ps(dz, dz))
+            );
+            const __m128 dist = _mm_sqrt_ps(d_sq);
+            _mm_storeu_ps(out_distances + i, dist);
+        }
     }
 #endif
 

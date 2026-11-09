@@ -132,6 +132,7 @@ public:
             std::lock_guard lock(mutex_);
             jobs_.emplace(std::forward<Fn>(fn));
             ++pending_jobs_;
+            unpopped_jobs_.fetch_add(1, std::memory_order_release);
         }
         condition_.notify_one();
     }
@@ -208,6 +209,7 @@ public:
                     });
                 }
                 pending_jobs_ += tasks_to_enqueue;
+                unpopped_jobs_.fetch_add(tasks_to_enqueue, std::memory_order_release);
             }
             for (std::size_t i = 0; i < tasks_to_enqueue; ++i) {
                 condition_.notify_one();
@@ -229,49 +231,56 @@ public:
 
         // Wait for workers to finish all enqueued tasks
         while (token.finished_tasks.load(std::memory_order_acquire) < tasks_to_enqueue) {
-            Job job;
-            {
-                std::unique_lock lock(mutex_);
-                if (!jobs_.empty()) {
-                    job = std::move(jobs_.front());
-                    jobs_.pop();
+            if (unpopped_jobs_.load(std::memory_order_relaxed) > 0) {
+                Job job;
+                {
+                    std::unique_lock lock(mutex_);
+                    if (!jobs_.empty()) {
+                        job = std::move(jobs_.front());
+                        jobs_.pop();
+                        unpopped_jobs_.fetch_sub(1, std::memory_order_relaxed);
+                    }
+                }
+                if (job) {
+                    try {
+                        job();
+                    } catch (...) {
+                    }
+                    --pending_jobs_;
+                    continue;
                 }
             }
-            if (job) {
-                try {
-                    job();
-                } catch (...) {
-                }
-                --pending_jobs_;
-            } else {
+
 #if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
-                _mm_pause();
+            _mm_pause();
 #else
-                std::this_thread::yield();
+            std::this_thread::yield();
 #endif
-            }
         }
     }
 
     void wait_idle() {
         while (pending_jobs_.load(std::memory_order_acquire) > 0) {
-            Job job;
-            {
-                std::unique_lock lock(mutex_);
-                if (!jobs_.empty()) {
-                    job = std::move(jobs_.front());
-                    jobs_.pop();
+            if (unpopped_jobs_.load(std::memory_order_relaxed) > 0) {
+                Job job;
+                {
+                    std::unique_lock lock(mutex_);
+                    if (!jobs_.empty()) {
+                        job = std::move(jobs_.front());
+                        jobs_.pop();
+                        unpopped_jobs_.fetch_sub(1, std::memory_order_relaxed);
+                    }
+                }
+                if (job) {
+                    try {
+                        job();
+                    } catch (...) {
+                    }
+                    --pending_jobs_;
+                    continue;
                 }
             }
-            if (job) {
-                try {
-                    job();
-                } catch (...) {
-                }
-                --pending_jobs_;
-            } else {
-                std::this_thread::yield();
-            }
+            std::this_thread::yield();
         }
     }
 
@@ -290,9 +299,35 @@ public:
 private:
     void worker_loop() {
         is_worker_ = true;
-        while (true) {
+        constexpr int kSpinLimit = 64;
+
+        while (!stopping_) {
             Job job;
-            {
+
+            // 1. Try to acquire job during brief active spin window without OS context switch
+            for (int spin = 0; spin < kSpinLimit && !stopping_; ++spin) {
+                if (unpopped_jobs_.load(std::memory_order_relaxed) > 0) {
+                    std::unique_lock lock(mutex_, std::try_to_lock);
+                    if (lock.owns_lock() && !jobs_.empty()) {
+                        job = std::move(jobs_.front());
+                        jobs_.pop();
+                        unpopped_jobs_.fetch_sub(1, std::memory_order_relaxed);
+                        break;
+                    }
+                }
+#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
+                if (spin < 32) {
+                    _mm_pause();
+                } else {
+                    std::this_thread::yield();
+                }
+#else
+                std::this_thread::yield();
+#endif
+            }
+
+            // 2. If no job acquired during spin, sleep on condition variable
+            if (!job && !stopping_) {
                 std::unique_lock lock(mutex_);
                 condition_.wait(lock, [&] {
                     return stopping_ || !jobs_.empty();
@@ -305,6 +340,7 @@ private:
                 if (!jobs_.empty()) {
                     job = std::move(jobs_.front());
                     jobs_.pop();
+                    unpopped_jobs_.fetch_sub(1, std::memory_order_relaxed);
                 }
             }
 
@@ -325,6 +361,7 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable condition_;
     std::atomic<std::size_t> pending_jobs_{0};
+    std::atomic<std::size_t> unpopped_jobs_{0};
     std::size_t min_elements_per_task_{1024};
     bool stopping_{false};
 };

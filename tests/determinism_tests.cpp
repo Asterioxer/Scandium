@@ -1,7 +1,9 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <random>
 #include <sstream>
+#include <vector>
 
 #include "scandium/runtime/engine.hpp"
 #include "scandium/simulation/agent_world.hpp"
@@ -112,20 +114,15 @@ void test_serialization_edge_cases() {
     // 6. Invalid counts
     {
         simulation::Replay r;
-        // Count larger than reasonable limit (10,000,000)
         assert(!r.from_string("SCANDIUM_REPLAY_V1\n99999999999999999\n0 10 20"));
-        // Negative count interpreted as massive uint
         assert(!r.from_string("SCANDIUM_REPLAY_V1\n-5\n0 10 20"));
-        // Count claims 5 but only 1 entry present
         assert(!r.from_string("SCANDIUM_REPLAY_V1\n5\n0 10 20\n"));
     }
 
     // 7. File I/O failures
     {
         simulation::Replay r;
-        // Nonexistent file load
         assert(!r.load_from_file("nonexistent_directory_xyz/impossible_replay_file.bin"));
-        // Save to invalid path
         assert(!r.save_to_file(""));
 #if defined(_WIN32)
         assert(!r.save_to_file("Z:/impossible_volume_path/cannot_write.bin"));
@@ -159,7 +156,6 @@ void test_repeatable_simulation_determinism() {
             });
 
         for (int frame = 0; frame < frames; ++frame) {
-            // Apply deterministic inputs at specific ticks
             if (frame == 10) {
                 engine.set_target({10.0f, 0.0f, 5.0f});
             } else if (frame == 30) {
@@ -196,11 +192,79 @@ void test_repeatable_simulation_determinism() {
     }
 }
 
+void test_randomized_population_determinism() {
+    constexpr std::size_t agent_count = 256;
+    constexpr int frames = 120;
+
+    auto run_sim = [](std::size_t workers) -> std::vector<std::uint64_t> {
+        runtime::Engine engine{{1.0 / 60.0, 8}, workers};
+        std::mt19937 rng{9999};
+        std::uniform_real_distribution<float> pos_dist(-50.0f, 50.0f);
+        std::uniform_real_distribution<float> speed_dist(2.0f, 8.0f);
+
+        for (std::size_t i = 0; i < agent_count; ++i) {
+            engine.world().add_agent({
+                static_cast<std::uint32_t>(i),
+                {pos_dist(rng), 0.0f, pos_dist(rng)},
+                {},
+                {},
+                simulation::AgentState::Idle,
+                speed_dist(rng)
+            });
+        }
+
+        std::vector<std::uint64_t> hashes;
+        engine.events().subscribe<runtime::SimulationTickEvent>(
+            [&](const runtime::SimulationTickEvent& event) {
+                hashes.push_back(event.state_hash);
+            });
+
+        for (int frame = 0; frame < frames; ++frame) {
+            if (frame % 25 == 0) {
+                engine.set_target({pos_dist(rng), 0.0f, pos_dist(rng)});
+            }
+            engine.advance(1.0 / 60.0);
+        }
+
+        return hashes;
+    };
+
+    const auto h1 = run_sim(1);
+    const auto h4 = run_sim(4);
+    const auto h8 = run_sim(8);
+
+    assert(h1.size() == frames);
+    assert(h4.size() == frames);
+    assert(h8.size() == frames);
+
+    for (std::size_t i = 0; i < frames; ++i) {
+        assert(h1[i] == h4[i] && h1[i] == h8[i] && "Determinism diverged in randomized population test!");
+    }
+}
+
+void test_edge_case_floats_and_stability() {
+    simulation::AgentWorld world1{4.0f};
+    simulation::AgentWorld world2{4.0f};
+
+    // Edge case 1: Subnormals, extreme coordinates, negative zeros
+    world1.add_agent({1, {-1e5f, -0.0f, 1e5f}, {}, {0.0f, 0.0f, 0.0f}, simulation::AgentState::Idle, 5.0f});
+    world2.add_agent({1, {-1e5f, 0.0f, 1e5f}, {}, {0.0f, 0.0f, 0.0f}, simulation::AgentState::Idle, 5.0f});
+
+    const auto report = simulation::diagnose_state_mismatch(world1, world2);
+    assert(report.matches);
+
+    const auto h1 = simulation::hash_agent_state(world1);
+    const auto h2 = simulation::hash_agent_state(world2);
+    assert(h1 == h2 && "Float -0.0f vs +0.0f must produce identical quantized state hash!");
+}
+
 int main() {
     test_replay_serialization();
     test_serialization_edge_cases();
     test_mismatch_diagnostics();
     test_repeatable_simulation_determinism();
-    std::cout << "All determinism and serialization tests passed successfully across 1, 2, 4, 8, 16 workers.\n";
+    test_randomized_population_determinism();
+    test_edge_case_floats_and_stability();
+    std::cout << "All determinism, randomized population, and float stability tests passed successfully.\n";
     return 0;
 }

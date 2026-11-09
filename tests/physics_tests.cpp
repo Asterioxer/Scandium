@@ -9,6 +9,7 @@
 
 
 #include "scandium/physics/ccd.hpp"
+#include "scandium/physics/simd_ray_intersection.hpp"
 
 void test_continuous_collision_detection() {
     using namespace scandium::physics;
@@ -65,6 +66,68 @@ void test_continuous_collision_detection() {
         assert(std::fabs(vel.x - (-5.0f)) < 1e-4f);
         assert(std::fabs(vel.y - 5.0f) < 1e-4f);
     }
+}
+
+void test_simd_ray_intersection() {
+    using namespace scandium::physics;
+    using scandium::math::Vec3f;
+    using scandium::math::Ray;
+
+    std::vector<Aabb> boxes = {
+        Aabb{{10.0f, -1.0f, -1.0f}, {12.0f, 1.0f, 1.0f}}, // Hit (dist ~10)
+        Aabb{{20.0f, -1.0f, -1.0f}, {22.0f, 1.0f, 1.0f}}, // Hit (dist ~20)
+        Aabb{{5.0f, 5.0f, 5.0f}, {7.0f, 7.0f, 7.0f}},     // Miss
+        Aabb{{30.0f, -0.5f, -0.5f}, {35.0f, 0.5f, 0.5f}}, // Hit (dist ~30)
+        Aabb{{-5.0f, -1.0f, -1.0f}, {-3.0f, 1.0f, 1.0f}}, // Behind ray origin
+        Aabb{{50.0f, -2.0f, -2.0f}, {60.0f, 2.0f, 2.0f}}, // Hit (dist ~50)
+        Aabb{{0.0f, 10.0f, 0.0f}, {2.0f, 12.0f, 2.0f}},   // Miss
+        Aabb{{80.0f, -1.0f, -1.0f}, {85.0f, 1.0f, 1.0f}}  // Hit (dist ~80)
+    };
+
+    Ray ray{Vec3f{0.0f, 0.0f, 0.0f}, Vec3f{1.0f, 0.0f, 0.0f}};
+
+    const auto soa8 = AABB8::from_aabbs(boxes.data(), boxes.size());
+
+    // 1. Scalar baseline
+    const auto scalar_res = intersect_ray_8aabb_scalar(ray, soa8);
+    // Expected hits: 0, 1, 3, 5, 7 -> mask: (1 | 2 | 8 | 32 | 128) = 171
+    assert((scalar_res.hit_mask & (1u << 0)) != 0);
+    assert((scalar_res.hit_mask & (1u << 1)) != 0);
+    assert((scalar_res.hit_mask & (1u << 2)) == 0); // Miss
+    assert((scalar_res.hit_mask & (1u << 3)) != 0);
+    assert((scalar_res.hit_mask & (1u << 4)) == 0); // Behind
+    assert((scalar_res.hit_mask & (1u << 5)) != 0);
+    assert((scalar_res.hit_mask & (1u << 6)) == 0); // Miss
+    assert((scalar_res.hit_mask & (1u << 7)) != 0);
+
+    // 2. Hardware-dispatched SIMD
+    const auto simd_res = intersect_ray_8aabb(ray, soa8);
+    assert(simd_res.hit_mask == scalar_res.hit_mask);
+
+    for (int i = 0; i < 8; ++i) {
+        if ((simd_res.hit_mask & (1u << i)) != 0) {
+            assert(std::fabs(simd_res.hit_distances[i] - scalar_res.hit_distances[i]) < 1e-4f);
+        }
+    }
+
+#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
+    // 3. Explicit AVX2 test
+    if (scandium::core::CPUFeatures::has_avx2()) {
+        const auto avx_res = intersect_ray_8aabb_avx2(ray, soa8);
+        assert(avx_res.hit_mask == scalar_res.hit_mask);
+        for (int i = 0; i < 8; ++i) {
+            if ((avx_res.hit_mask & (1u << i)) != 0) {
+                assert(std::fabs(avx_res.hit_distances[i] - scalar_res.hit_distances[i]) < 1e-4f);
+            }
+        }
+    }
+
+    // 4. SSE 4-wide test
+    const auto soa4 = AABB4::from_aabbs(boxes.data(), 4);
+    const auto sse_res = intersect_ray_4aabb_sse(ray, soa4);
+    // Lanes 0, 1, 3 hit, 2 miss -> mask = 11 (1 | 2 | 8)
+    assert((sse_res.hit_mask & 0x0F) == (scalar_res.hit_mask & 0x0F));
+#endif
 }
 
 int main() {
@@ -251,6 +314,7 @@ int main() {
         assert(std::fabs(bvh_hit->distance - closest_naive_dist) < 1e-5f);
     }
 
+    test_simd_ray_intersection();
     test_continuous_collision_detection();
     (void)Vec3f{};
     return 0;

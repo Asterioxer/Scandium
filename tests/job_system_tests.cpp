@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "scandium/core/job_system.hpp"
+#include "scandium/core/work_stealing_queue.hpp"
 
 using namespace scandium::core;
 
@@ -215,7 +216,94 @@ void test_rapid_fire_parallel_for_stress() {
     std::cout << "Passed test_rapid_fire_parallel_for_stress." << std::endl;
 }
 
+void test_work_stealing_queue() {
+    std::cout << "Starting test_work_stealing_queue..." << std::endl;
+    // 1. Basic LIFO push / pop
+    {
+        WorkStealingQueue<int, 64> q;
+        assert(q.empty());
+        assert(q.size() == 0);
+
+        for (int i = 1; i <= 10; ++i) {
+            bool ok = q.push(i);
+            assert(ok);
+        }
+        assert(!q.empty());
+        assert(q.size() == 10);
+
+        // LIFO order for owner pop
+        for (int i = 10; i >= 1; --i) {
+            auto val = q.pop();
+            assert(val.has_value());
+            assert(*val == i);
+        }
+        assert(q.empty());
+        assert(!q.pop().has_value());
+    }
+
+    // 2. Multi-threaded steal contention
+    {
+        constexpr int num_items = 2000;
+        WorkStealingQueue<int, 4096> q;
+        for (int i = 0; i < num_items; ++i) {
+            q.push(i);
+        }
+
+        std::atomic<bool> start{false};
+        std::atomic<int> stolen_count{0};
+        std::atomic<int> popped_count{0};
+        std::vector<int> collected;
+        std::mutex collected_mutex;
+
+        // 4 concurrent stealer threads
+        std::vector<std::thread> stealers;
+        for (int s = 0; s < 4; ++s) {
+            stealers.emplace_back([&] {
+                while (!start.load(std::memory_order_acquire)) {
+                    std::this_thread::yield();
+                }
+                while (true) {
+                    auto item = q.steal();
+                    if (item.has_value()) {
+                        stolen_count.fetch_add(1, std::memory_order_relaxed);
+                        std::lock_guard lock(collected_mutex);
+                        collected.push_back(*item);
+                    } else if (q.empty()) {
+                        break;
+                    }
+                }
+            });
+        }
+
+        // Owner thread pops concurrently
+        start.store(true, std::memory_order_release);
+        while (true) {
+            auto item = q.pop();
+            if (item.has_value()) {
+                popped_count.fetch_add(1, std::memory_order_relaxed);
+                std::lock_guard lock(collected_mutex);
+                collected.push_back(*item);
+            } else if (q.empty()) {
+                break;
+            }
+        }
+
+        for (auto& t : stealers) {
+            t.join();
+        }
+
+        assert(collected.size() == num_items);
+        std::sort(collected.begin(), collected.end());
+        for (int i = 0; i < num_items; ++i) {
+            assert(collected[i] == i); // No dropped or duplicate items!
+        }
+        assert(stolen_count.load() + popped_count.load() == num_items);
+    }
+    std::cout << "Passed test_work_stealing_queue." << std::endl;
+}
+
 int main() {
+    test_work_stealing_queue();
     test_job_system_basic();
     test_parallel_for_correctness();
     test_nested_parallel_for();

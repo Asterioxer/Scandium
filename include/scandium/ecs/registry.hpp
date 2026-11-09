@@ -144,6 +144,9 @@ public:
         if (id < entities_.size() && entities_[id].active) {
             entities_[id].active = false;
             ++entities_[id].generation;
+            if (entities_[id].generation == 0) {
+                entities_[id].generation = 1;
+            }
             transforms_[id] = {};
 
             for (auto& [type, pool] : component_pools_) {
@@ -198,8 +201,19 @@ public:
     }
 
     template <typename Component>
+    Component& emplace(Entity entity, Component component) {
+        assert(alive(entity) && "Cannot attach component to stale or inactive entity handle");
+        return emplace<Component>(entity.id, std::move(component));
+    }
+
+    template <typename Component>
     Component& assign(EntityId id, Component component) {
         return emplace<Component>(id, std::move(component));
+    }
+
+    template <typename Component>
+    Component& assign(Entity entity, Component component) {
+        return emplace<Component>(entity, std::move(component));
     }
 
     template <typename Component>
@@ -212,12 +226,28 @@ public:
     }
 
     template <typename Component>
+    [[nodiscard]] Component* get(Entity entity) noexcept {
+        if (!alive(entity)) {
+            return nullptr;
+        }
+        return get<Component>(entity.id);
+    }
+
+    template <typename Component>
     [[nodiscard]] const Component* get(EntityId id) const noexcept {
         if (!alive(id)) {
             return nullptr;
         }
         const auto* pool = get_pool<Component>();
         return pool ? pool->get(id) : nullptr;
+    }
+
+    template <typename Component>
+    [[nodiscard]] const Component* get(Entity entity) const noexcept {
+        if (!alive(entity)) {
+            return nullptr;
+        }
+        return get<Component>(entity.id);
     }
 
     template <typename Component>
@@ -230,10 +260,22 @@ public:
     }
 
     template <typename Component>
+    [[nodiscard]] bool has(Entity entity) const noexcept {
+        return alive(entity) && has<Component>(entity.id);
+    }
+
+    template <typename Component>
     void remove(EntityId id) noexcept {
         auto* pool = get_pool<Component>();
         if (pool) {
             pool->remove(id);
+        }
+    }
+
+    template <typename Component>
+    void remove(Entity entity) noexcept {
+        if (alive(entity)) {
+            remove<Component>(entity.id);
         }
     }
 

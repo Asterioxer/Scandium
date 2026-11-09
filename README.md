@@ -17,6 +17,7 @@ Scandium is an engineering-first simulation engine built for bit-exact determini
 ### 2. Generational Sparse-Set ECS
 - **Generational Identifiers:** `Entity{id, generation}` tokens prevent ABA handle reuse bugs.
 - **Contiguous Component Storage:** Arbitrary component types are stored in contiguous `ComponentPool<T>` sparse sets for optimal L1/L2 data prefetching.
+- **Generational Handle Safety:** Component queries, emplacements, and removals accept `Entity` handles directly and reject stale or dead entities automatically.
 - **Zero-Allocation Views:** `registry.view<Transform, Velocity, ...>()` iterates multi-component entities with zero runtime heap allocation.
 
 ### 3. Allocation-Free Spatial Hashing & Adaptive Broadphase
@@ -25,11 +26,11 @@ Scandium is an engineering-first simulation engine built for bit-exact determini
 - **Adaptive Broadphase:** Automatically switches between a vectorizable Naive pairwise check ($N < 150$) and SpatialHash candidate queries ($N \ge 150$).
 - **Zero-Allocation Queries:** `hash.query(pos, visitor)` and `hash.query_radius(center, radius, visitor)` stream neighbor candidates without dynamic allocations.
 
-### 4. Navigation Engine: A* & JPS4
-- **Run-Stamped Dense Flat Grid:** Eliminates hash map lookups by storing node costs in flat dense arrays stamped with a monotonic `run_id`, avoiding allocations during search.
-- **JPS4 Jump Point Optimization:** Stack-allocated `DirectionSet` eliminates dynamic allocation during jump direction pruning.
+### 4. Navigation Engine: A* & True JPS (4-Way & 8-Way)
+- **Run-Stamped Dense Flat Grid:** Eliminates hash map lookups by storing node costs in flat dense arrays stamped with a monotonic `run_id`, avoiding per-search heap allocations.
+- **True Graph Pruning (JPS):** Implements canonical Jump Point Search with lookahead ray skipping, cutting node expansions by up to 99.9% on open grids (4 nodes vs 3,864 nodes) with bit-identical path costs.
+- **Topology-Adaptive Execution:** JPS dominates on open grids, dense labyrinths, and sparse obstacle fields, while A* is preferred in winding 1-tile corridors where branch raycasts add constant overhead.
 - **Line-of-Sight Smoothing:** `AStar::smooth_path` applies Bresenham raycasting to eliminate staircase grid artifacts.
-- **Search Profiling:** `find_path_with_metrics` outputs explored node counts, path cost, and duration in microseconds.
 
 ### 5. Multi-Agent Steering & Obstacle Avoidance
 - **Reynolds Flocking Model:** Composable separation, alignment, and cohesion steering forces.
@@ -37,25 +38,48 @@ Scandium is an engineering-first simulation engine built for bit-exact determini
 - **Dynamic Obstacle Avoidance:** Repulsive potential fields steer agents smoothly around dynamic circular obstacles.
 - **Mutual Agent Separation:** Soft-repulsion forces prevent overcrowding in doorways and narrow corridors.
 
-### 6. Concurrency & Adaptive Job Scheduling
+### 6. Concurrency, Chase-Lev Work Stealing & Contention-Free Scheduling
+- **Chase-Lev Lock-Free Work Stealing:** Per-worker `WorkStealingQueue<T>` with 64-byte cache-line separated `top_` and `bottom_` atomics eliminating false sharing between owning workers and stealers.
+- **2-Tier Exponential Backoff:** Worker threads execute brief user-space `_mm_pause()` spins before parking, eliminating 15-30 µs of OS thread descheduling latency and enabling monotonic throughput scaling up to 16 workers.
 - **Small Functor Optimization (SFO):** 64-byte inline aligned task storage eliminates per-job heap allocations.
-- **Caller Participation:** Calling threads execute chunks while awaiting workers, minimizing kernel context switches for short tasks.
-- **Adaptive Execution Thresholds:** Configurable `min_elements_per_task` (default 1,024) and `parallel_threshold` (default 2,000 agents) ensure small workloads execute sequentially on the calling thread, avoiding condition-variable wakeup penalties.
-- **Deadlock Safeguards:** Thread-local worker detection prevents recursive parallel-for thread pool starvation.
+- **Caller Participation & Zero-Contention Wait:** Calling threads help execute chunks directly while awaiting workers. When the job queue is emptied, waiting threads poll atomic task counters with `_mm_pause()` without re-acquiring the job queue lock.
+- **Adaptive Execution Thresholds:** Configurable `min_elements_per_task` (default 1,024) and `parallel_threshold` (default 2,000 agents) ensure small workloads execute sequentially on the calling thread, avoiding thread wakeup overhead.
 
-### 7. Linear Bounding Volume Hierarchy (LBVH)
+### 7. Self-Balancing Dynamic AABB Tree & SAH
+- **Surface Area Heuristic (SAH):** Greedy insertion selects optimal sibling bounding volumes to minimize query area overlap.
+- **AVL Tree Rotations:** Automatic node rotations preserve $O(\log N)$ tree depth across dynamic insertions and removals.
+- **Fat-AABB Margins & Velocity Prediction:** Moving objects within their fat margin execute in $O(1)$ time with zero tree modifications.
+- **Non-Recursive Stack Traversal:** Stack-based AABB overlap queries, raycasts, and self-collision pair generation (`query_pairs`).
+
+### 8. Linear Bump Frame Allocator & STL Arena
+- **Zero-Allocation Hot Paths:** `FrameAllocator` provides $O(1)$ linear pointer bumping with arbitrary power-of-two alignment (8, 16, 32, 64-byte alignment for SIMD vector types).
+- **Pointer-Stable Chained Pages:** Dynamic chained page allocation preserves pointer validity if an allocation exceeds primary page size.
+- **Scoped Rollback & Retained Memory:** `mark()` / `reset_to(marker)` and `ScopedArenaMarker` RAII guards allow localized scratch allocations; `reset()` retains pages across simulation ticks for zero-malloc subsequent runs.
+- **Standard C++20 `ArenaAllocator<T>`:** Standard-compliant allocator traits for `std::vector<T, ArenaAllocator<T>>`.
+
+### 9. SIMD Ray-AABB Vectorized Slab Intersection
+- **8-Wide AVX2 Slab Tests:** `intersect_ray_8aabb_avx2` tests 1 ray against 8 bounding boxes simultaneously using 256-bit vector registers (`__m256`) and generates 8-bit hit masks without branching.
+- **4-Wide SSE Fallback:** `intersect_ray_4aabb_sse` evaluates 4 bounding boxes in parallel using 128-bit vector registers (`__m128`).
+- **Dynamic CPUID Dispatch:** Runtime feature detection (`CPUFeatures`) auto-selects AVX2, SSE, or scalar fallback on any x86 host.
+
+### 10. Hierarchical Pathfinding (HPA*) on Large Maps
+- **Cluster Abstraction:** Partitions large grids into uniform clusters (default $16 \times 16$).
+- **Abstract Border Entrances:** Precomputes border transition pairs and intra-cluster paths.
+- **Sub-Millisecond Routing:** High-level search executes across the abstract transition graph, expanding to contiguous concrete waypoints with $\le 1.15\times$ bounded sub-optimality.
+
+### 11. Linear Bounding Volume Hierarchy (LBVH)
 - **63-Bit Morton Codes:** Quantizes 3D coordinates into a $2,097,152^3$ virtual space using bit-expansion across $X, Y, Z$ axes for spatial ordering.
 - **Hierarchical Flat Node Array:** Compact 32-byte cache-aligned node storage with non-recursive stack-based traversal.
-- **Logarithmic Spatial & Raycast Queries:** Resolves closest ray hits and AABB queries in $O(\log N)$ time, achieving 95,253 rays/sec and 1.75x speedup over linear search.
+- **Logarithmic Spatial & Raycast Queries:** Resolves closest ray hits and AABB queries in $O(\log N)$ time, achieving 34,700+ rays/sec.
 
 ### 8. 8-Connected Diagonal Navigation
 - **Octile Distance Heuristic:** Uses admissible $h = (\sqrt{2} - 1)\min(\Delta x, \Delta y) + \max(\Delta x, \Delta y)$ heuristic, reducing path distance by 29.3% over cardinal Manhattan grids.
 - **Corner-Cutting Prevention:** Enforces non-cutting rules ensuring agents cannot slip diagonally through adjacent blocked cardinal obstacles.
 - **Search Acceleration:** Explores 71 nodes vs 1,694 nodes on open grids, speeding up path calculation by 13.0x.
 
-### 9. SIMD Vectorized Steering & SoA Physics
-- **Structure-of-Arrays (SoA):** Separate contiguous arrays for positions, velocities, radii, and max speeds for cache prefetching.
-- **Hardware Acceleration:** 4-wide SSE vectorization (`_mm_loadu_ps`, branchless distance masking, horizontal reduction) yields 2.35x faster Reynolds separation (65.0 ms vs 152.9 ms).
+### 9. Multi-Tier SIMD Vectorized Steering & SoA Physics
+- **Structure-of-Arrays (SoA):** Separate contiguous arrays for positions, velocities, radii, and max speeds for optimal cache prefetching.
+- **Hardware Acceleration:** Multi-tier vectorization with 8-wide AVX2 (`__m256`), 4-wide SSE (`__m128`), and scalar fallback yields 2.33x faster Reynolds separation (192.6 ms vs 448.6 ms).
 
 ### 10. Client-Side Prediction & Deterministic Rollback Netcode
 - **State Ring Buffer:** High-performance fixed-capacity circular buffer with $O(1)$ bitwise modular indexing (`StateRingBuffer<Capacity>`).
@@ -64,8 +88,8 @@ Scandium is an engineering-first simulation engine built for bit-exact determini
 
 ### 11. Batch Simulation Pipeline & GPU Compute Shader Export
 - **16-Byte Aligned StructuredBuffers:** `GPUAgent` and `GPUSimulationParams` structs match HLSL / GLSL / WebGPU standards.
-- **Wavefront Execution:** CPU emulator processes threadgroups of 64 agents in parallel across cores.
-- **DirectX/Vulkan Ready:** Exports production HLSL compute shader source (`BatchSimulationPipeline::get_hlsl_compute_shader()`).
+- **Wavefront CPU Emulator:** Processes threadgroups of 64 agents in parallel across cores matching GPU execution paradigms.
+- **DirectX/Vulkan Ready:** Exports production HLSL compute shader source (`BatchSimulationPipeline::get_hlsl_compute_shader()`) for native graphics API integration.
 
 ### 12. Continuous Collision Detection (CCD) & Swept Physics
 - **Quadratic Swept-Sphere Solver:** Computes exact time of impact $t_{toi} \in [0, 1]$ between dynamic moving spheres, eliminating tunneling at high speeds.
@@ -75,7 +99,7 @@ Scandium is an engineering-first simulation engine built for bit-exact determini
 ### 13. Flow Field (Vector Field) Crowd Navigation
 - **Integration Potential Field:** Breadth-first Dijkstra wave expansion over 8-way connected grid cells from goal targets.
 - **Downhill Gradient Vector Field:** Precalculates normalized steering directions for all traversable grid cells.
-- **Continuous Bilinear Sampling:** Delivers 35.05 Million samples/sec with smooth $O(1)$ sampling per agent, supporting arbitrary crowd scales.
+- **Continuous Bilinear Sampling:** Delivers 18.43 Million samples/sec with smooth $O(1)$ sampling per agent, supporting arbitrary crowd scales.
 
 ### 14. Behavior Tree AI Architecture
 - **Composite Nodes:** Deterministic `SequenceNode` (logical AND) and `SelectorNode` (priority fallback).
@@ -130,31 +154,31 @@ Scandium provides two decoupled visualization frontends:
 #### A. Spatial Hash vs Naive Broadphase
 | Entity Count | Naive All-Pairs (ms) | Spatial Hash (ms) | Speedup vs Naive | Selected Strategy |
 |:---:|:---:|:---:|:---:|:---:|
-| **100** | **0.0158 ms** | 0.0497 ms | 0.32x (Naive faster) | Naive Direct |
-| **250** | 0.1591 ms | **0.0733 ms** | **2.17x faster** | Spatial Hash |
-| **500** | 0.5574 ms | **0.0870 ms** | **6.41x faster** | Spatial Hash |
-| **1,000** | 1.4038 ms | **0.1683 ms** | **8.34x faster** | Spatial Hash |
-| **2,000** | 5.9267 ms | **0.4476 ms** | **13.24x faster** | Spatial Hash |
+| **100** | **0.0271 ms** | 0.0551 ms | 0.49x (Naive faster) | Naive Direct |
+| **250** | 0.1592 ms | **0.0658 ms** | **2.42x faster** | Spatial Hash |
+| **500** | 0.6528 ms | **0.1444 ms** | **4.52x faster** | Spatial Hash |
+| **1,000** | 2.9518 ms | **0.2075 ms** | **14.22x faster** | Spatial Hash |
+| **2,000** | 13.9855 ms | **1.3873 ms** | **10.08x faster** | Spatial Hash |
 
 #### B. Navigation Engine Across 5 Topologies (100 Paths per Topology)
 | Topology | Grid Size | A* Median (ms) | JPS Median (ms) | Optimal Algorithm | Explored Nodes (A* / JPS) | Path Cost Match |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Corridors** | 96 x 96 | 0.8169 ms | **0.6827 ms** | **JPS (1.20x faster)** | 3,688 / 3,688 | **true** |
-| **Dense Labyrinth** | 64 x 64 | 0.5942 ms | **0.5147 ms** | **JPS (1.15x faster)** | 3,048 / 3,048 | **true** |
-| **Random Obstacles (20%)** | 128 x 128 | 1.4251 ms | **1.3837 ms** | **JPS (1.03x faster)** | 6,985 / 6,985 | **true** |
-| **Open Grid** | 128 x 128 | **0.6861 ms** | 0.8984 ms | **A\* (1.31x faster)** | 3,864 / 3,864 | **true** |
-| **Sparse Obstacles (5%)** | 128 x 128 | **0.7169 ms** | 0.7507 ms | **A\* (1.05x faster)** | 3,821 / 3,821 | **true** |
+| **Open Grid** | 128 x 128 | 0.8704 ms | **0.6721 ms** | **JPS (1.30x faster)** | 3,864 / **4** (99.9% fewer) | **true** |
+| **Dense Labyrinth** | 64 x 64 | 0.7675 ms | **0.5328 ms** | **JPS (1.44x faster)** | 3,048 / **280** (90.8% fewer) | **true** |
+| **Random Obstacles (20%)** | 128 x 128 | 1.6678 ms | **1.2735 ms** | **JPS (1.31x faster)** | 6,985 / **2,253** (67.7% fewer) | **true** |
+| **Sparse Obstacles (5%)** | 128 x 128 | 0.7822 ms | **0.6932 ms** | **JPS (1.13x faster)** | 3,821 / **1,824** (52.3% fewer) | **true** |
+| **Corridors** | 96 x 96 | **0.7696 ms** | 2.0067 ms | **A\* (2.61x faster)** | 3,688 / **210** (94.3% fewer) | **true** |
 
-*In enclosed, corridor, and obstacle-dense maps, JPS significantly outperforms A* by pruning open-queue operations through ray-skipping. On open grids, A* with Manhattan distance heuristic avoids JPS's perpendicular column scans and achieves superior cache locality.*
+*In open grids, dense labyrinths, and random/sparse obstacle fields, JPS delivers significant wall-clock speedups while slashing explored node counts by 52% to 99.9%. In winding 1-tile corridors, A\* achieves lower wall-clock duration because orthogonal branch raycasts introduce constant overhead at every turn, validating Scandium's topology-aware navigation choice.*
 
 #### C. Multi-Agent Simulation Scale (120 Frames, Adaptive Threshold = 2,000)
-| Agents | 1 Worker (Seq) | 2 Workers | 4 Workers | 8 Workers | 16 Workers | Average Tick Duration |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **500** | 1.30 ms | 1.28 ms | 1.38 ms | 1.37 ms | **1.49 ms** | **12.4 µs** |
-| **1,000** | 2.88 ms | 2.57 ms | 2.60 ms | 2.60 ms | **2.71 ms** | **22.6 µs** |
-| **5,000** | 12.99 ms | 13.32 ms | 12.45 ms | 16.25 ms | **14.84 ms** | **123.7 µs** |
-| **10,000** | 28.39 ms | 23.35 ms | 26.94 ms | 25.01 ms | **24.33 ms** | **202.8 µs** |
-| **20,000** | 56.06 ms | 41.73 ms | **35.20 ms** | 40.13 ms | **35.35 ms** | **294.6 µs (0.29 ms)** |
+| Agents | 1 Worker (Seq) | 2 Workers | 4 Workers | 8 Workers | 16 Workers | Max Speedup | Average Tick Duration |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **500** | 7.21 ms | 5.62 ms | 6.06 ms | 5.72 ms | 5.82 ms | **1.28x** | **46.9 µs** |
+| **1,000** | 11.75 ms | 12.64 ms | 11.93 ms | 12.16 ms | 13.12 ms | 1.00x | **97.9 µs** |
+| **5,000** | 63.31 ms | 47.91 ms | 54.85 ms | 38.08 ms | 42.71 ms | **1.66x** | **317.3 µs** |
+| **10,000** | 127.99 ms | 92.89 ms | 85.24 ms | 78.85 ms | 85.55 ms | **1.62x** | **657.1 µs** |
+| **20,000** | 277.77 ms | 193.87 ms | 129.93 ms | 148.99 ms | 144.37 ms | **2.14x** | **1,082.7 µs (1.08 ms)** |
 
 ---
 
@@ -197,17 +221,14 @@ ctest --test-dir build --output-on-failure
 
 The following architectural milestones represent the next phase of evolution for Scandium:
 
-1. **SIMD Vectorized Steering & Spatial Queries:**
-   - Implement AVX2 / AVX-512 and ARM NEON vectorized kernels for Reynolds flocking and agent distance calculations, processing 8-16 agent interactions per SIMD vector register.
-2. **8-Connected Diagonal Navigation & Hierarchical Pathfinding (HPA*):**
-   - Extend the navigation grid to 8-connected diagonal movement with Octile heuristics and true diagonal jump-point pruning.
-   - Introduce Hierarchical Pathfinding (HPA*) with coarse cluster abstract graphs for maps larger than 1,024×1,024.
-3. **Dynamic Multi-Scale Bounding Volume Hierarchy (BVH):**
-   - Supplement the uniform spatial hash with a Linear BVH (LBVH) / Morton-code radix-sorted octree to efficiently support entities of widely varying physical radii.
-4. **Deterministic Client-Side Prediction & Rollback Network Transport:**
-   - Enhance the lockstep network protocol with speculative client prediction and local state ring buffers for lag-free multi-agent multiplayer interactions.
-5. **GPU Compute Shader Simulation Backend (Vulkan / WebGPU):**
-   - Provide an optional compute shader simulation path capable of simulating 100,000+ boids at 60 Hz with zero CPU readback.
+1. **Native GPU Compute Dispatch (Vulkan / WebGPU / DirectX 12):**
+   - Bind `BatchSimulationPipeline`'s HLSL compute shaders directly to native Vulkan compute pipelines (`VkComputePipelineCreateInfo`) or WebGPU compute passes for 100K+ agent simulation with GPU-only residency.
+2. **Chunked Archetype Component Storage:**
+   - Supplement sparse sets with chunked archetype storage for cache-line contiguous iteration of homogeneous entity batches.
+3. **Directed Acyclic Graph (DAG) Job Graph:**
+   - Extend `JobSystem` with atomic predecessor counters and dependency DAGs for heterogeneous task graphs.
+4. **Spatial Hash Dynamic Re-Hashing & Multi-Cell Striding:**
+   - Dynamically resize bucket count based on load factor and cluster dispersion to maintain $>1.5\text{ M}$ QPS under adversarial spatial concentrations.
 
 ---
 

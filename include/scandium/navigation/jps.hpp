@@ -17,7 +17,8 @@ namespace scandium::navigation {
 class JumpPointSearch {
 public:
     [[nodiscard]] static PathResult find_path_with_metrics(
-        const Grid& grid, GridNode start, GridNode goal) {
+        const Grid& grid, GridNode start, GridNode goal,
+        GridConnectivity connectivity = GridConnectivity::FourWay) {
 
         const auto start_time = std::chrono::steady_clock::now();
 
@@ -75,8 +76,15 @@ public:
 
         std::priority_queue<OpenItem, std::vector<OpenItem>, Compare> open;
 
-        const auto heuristic = [](int x1, int y1, int x2, int y2) noexcept {
-            return static_cast<float>(std::abs(x1 - x2) + std::abs(y1 - y2));
+        const auto heuristic = [connectivity](int x1, int y1, int x2, int y2) noexcept -> float {
+            const int dx = std::abs(x1 - x2);
+            const int dy = std::abs(y1 - y2);
+            if (connectivity == GridConnectivity::EightWay) {
+                const float min_d = static_cast<float>(std::min(dx, dy));
+                const float max_d = static_cast<float>(std::max(dx, dy));
+                return 0.41421356f * min_d + max_d;
+            }
+            return static_cast<float>(dx + dy);
         };
 
         const std::size_t start_idx = grid.index(start);
@@ -109,28 +117,10 @@ public:
             const std::int32_t parent_idx = curr_node.came_from;
             const GridNode parent = parent_idx >= 0 ? grid.node_at_index(static_cast<std::size_t>(parent_idx)) : current;
 
-            for (const auto direction : pruned_directions(grid, current, parent)) {
-                const auto jump_node = jump(grid, current, direction, goal);
-                if (!jump_node.has_value()) {
-                    continue;
-                }
-
-                const std::size_t jump_idx = grid.index(*jump_node);
-                auto& j_node = get_node(jump_idx);
-                if (j_node.closed) {
-                    continue;
-                }
-
-                const float dist = static_cast<float>(
-                    std::abs(jump_node->x - current.x) + std::abs(jump_node->y - current.y));
-                const float tentative_g = curr_node.g_score + dist;
-
-                if (tentative_g < j_node.g_score) {
-                    j_node.g_score = tentative_g;
-                    j_node.came_from = static_cast<std::int32_t>(curr_idx);
-                    const float f = tentative_g + heuristic(jump_node->x, jump_node->y, goal.x, goal.y);
-                    open.push({jump_idx, f});
-                }
+            if (connectivity == GridConnectivity::FourWay) {
+                explore_neighbors_4way(grid, current, parent, goal, get_node, open, heuristic, curr_idx, curr_node.g_score);
+            } else {
+                explore_neighbors_8way(grid, current, parent, goal, get_node, open, heuristic, curr_idx, curr_node.g_score);
             }
         }
 
@@ -139,15 +129,10 @@ public:
             std::chrono::duration<double, std::micro>(end_time - start_time).count();
 
         if (!found) {
-            // For unreachable or complex 4-connected topology where aggressive pruning can exhaust
-            const auto astar_result = AStar::find_path_with_metrics(grid, start, goal);
-            if (astar_result.metrics.path_found) {
-                return astar_result;
-            }
             return {{}, {nodes_explored, 0.0f, duration_us, false}};
         }
 
-        // Reconstruct jump points
+        // Reconstruct path through jump points
         std::vector<GridNode> jump_points;
         std::size_t curr = goal_idx;
         while (curr != start_idx) {
@@ -161,7 +146,7 @@ public:
         jump_points.push_back(start);
         std::reverse(jump_points.begin(), jump_points.end());
 
-        // Expand straight segments between jump points
+        // Interpolate straight / diagonal segments between jump points
         std::vector<GridNode> path;
         path.push_back(jump_points.front());
         for (std::size_t i = 1; i < jump_points.size(); ++i) {
@@ -183,129 +168,283 @@ public:
     }
 
     [[nodiscard]] static std::vector<GridNode> find_path(
-        const Grid& grid, GridNode start, GridNode goal) {
-        return find_path_with_metrics(grid, start, goal).path;
+        const Grid& grid, GridNode start, GridNode goal,
+        GridConnectivity connectivity = GridConnectivity::FourWay) {
+        return find_path_with_metrics(grid, start, goal, connectivity).path;
     }
 
 private:
-    struct DirectionSet {
-        GridNode dirs[4];
+    struct DirList {
+        GridNode dirs[8];
         std::size_t count{0};
-
-        void push_back(GridNode d) noexcept {
-            dirs[count++] = d;
-        }
-
-        [[nodiscard]] const GridNode* begin() const noexcept { return dirs; }
-        [[nodiscard]] const GridNode* end() const noexcept { return dirs + count; }
-        [[nodiscard]] std::size_t size() const noexcept { return count; }
-        [[nodiscard]] bool empty() const noexcept { return count == 0; }
+        void push(GridNode d) noexcept { dirs[count++] = d; }
+        const GridNode* begin() const noexcept { return dirs; }
+        const GridNode* end() const noexcept { return dirs + count; }
     };
 
-    static DirectionSet pruned_directions(
-        const Grid& grid, GridNode node, GridNode parent) {
+    template <typename GetNodeFn, typename OpenQueue, typename HeuristicFn>
+    static void explore_neighbors_4way(
+        const Grid& grid, GridNode current, GridNode parent, GridNode goal,
+        GetNodeFn& get_node, OpenQueue& open, HeuristicFn& heuristic,
+        std::size_t curr_idx, float curr_g) {
 
-        static constexpr GridNode all_dirs[] = {
-            {1, 0}, {-1, 0}, {0, 1}, {0, -1}
-        };
-
-        DirectionSet result;
-
-        if (node == parent) {
-            for (const auto d : all_dirs) {
-                if (grid.walkable(node.x + d.x, node.y + d.y)) {
-                    result.push_back(d);
+        DirList dirs;
+        if (current == parent) {
+            static constexpr GridNode cardinals[] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            for (const auto d : cardinals) {
+                if (grid.walkable(current.x + d.x, current.y + d.y)) {
+                    dirs.push(d);
                 }
             }
-            return result;
+        } else {
+            const int dx = (current.x > parent.x) - (current.x < parent.x);
+            const int dy = (current.y > parent.y) - (current.y < parent.y);
+
+            if (dx != 0) {
+                if (grid.walkable(current.x + dx, current.y)) {
+                    dirs.push({dx, 0});
+                }
+                if (grid.walkable(current.x, current.y + 1)) {
+                    dirs.push({0, 1});
+                }
+                if (grid.walkable(current.x, current.y - 1)) {
+                    dirs.push({0, -1});
+                }
+            } else if (dy != 0) {
+                if (grid.walkable(current.x, current.y + dy)) {
+                    dirs.push({0, dy});
+                }
+                if (grid.walkable(current.x + 1, current.y)) {
+                    dirs.push({1, 0});
+                }
+                if (grid.walkable(current.x - 1, current.y)) {
+                    dirs.push({-1, 0});
+                }
+            }
         }
 
-        const int dx = node.x - parent.x;
-        const int dy = node.y - parent.y;
+        for (const auto d : dirs) {
+            const auto jump_node = jump_4way(grid, current, d, goal);
+            if (!jump_node.has_value()) {
+                continue;
+            }
 
-        if (dx != 0) {
-            const int norm_dx = dx > 0 ? 1 : -1;
-            if (grid.walkable(node.x + norm_dx, node.y)) {
-                result.push_back({norm_dx, 0});
+            const std::size_t jump_idx = grid.index(*jump_node);
+            auto& j_node = get_node(jump_idx);
+            if (j_node.closed) {
+                continue;
             }
-            if (!grid.walkable(node.x, node.y - 1) && grid.walkable(node.x + norm_dx, node.y - 1)) {
-                result.push_back({0, -1});
+
+            const float dist = static_cast<float>(std::abs(jump_node->x - current.x) + std::abs(jump_node->y - current.y));
+            const float tentative_g = curr_g + dist;
+
+            if (tentative_g < j_node.g_score) {
+                j_node.g_score = tentative_g;
+                j_node.came_from = static_cast<std::int32_t>(curr_idx);
+                const float f = tentative_g + heuristic(jump_node->x, jump_node->y, goal.x, goal.y);
+                open.push({jump_idx, f});
             }
-            if (!grid.walkable(node.x, node.y + 1) && grid.walkable(node.x + norm_dx, node.y + 1)) {
-                result.push_back({0, 1});
-            }
-            return result;
         }
-
-        if (dy != 0) {
-            const int norm_dy = dy > 0 ? 1 : -1;
-            if (grid.walkable(node.x, node.y + norm_dy)) {
-                result.push_back({0, norm_dy});
-            }
-            if (!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + norm_dy)) {
-                result.push_back({-1, 0});
-            }
-            if (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + norm_dy)) {
-                result.push_back({1, 0});
-            }
-            return result;
-        }
-
-        return result;
     }
 
-    static std::optional<GridNode> jump(
-        const Grid& grid, GridNode current, GridNode direction, GridNode goal) {
+    static std::optional<GridNode> jump_4way(
+        const Grid& grid, GridNode current, GridNode dir, GridNode goal) {
 
-        GridNode node{current.x + direction.x, current.y + direction.y};
+        GridNode node{current.x + dir.x, current.y + dir.y};
 
         while (grid.walkable(node.x, node.y)) {
             if (node == goal) {
                 return node;
             }
 
-            if (direction.x != 0) {
-                if ((!grid.walkable(node.x, node.y - 1) && grid.walkable(node.x + direction.x, node.y - 1)) ||
-                    (!grid.walkable(node.x, node.y + 1) && grid.walkable(node.x + direction.x, node.y + 1))) {
+            if (dir.x != 0) {
+                if ((!grid.walkable(node.x - dir.x, node.y - 1) && grid.walkable(node.x, node.y - 1)) ||
+                    (!grid.walkable(node.x - dir.x, node.y + 1) && grid.walkable(node.x, node.y + 1))) {
                     return node;
                 }
 
-                if (jump_vertical_check(grid, node, 1, goal) ||
-                    jump_vertical_check(grid, node, -1, goal)) {
+                if (jump_4way_orthogonal(grid, node, {0, 1}, goal) ||
+                    jump_4way_orthogonal(grid, node, {0, -1}, goal)) {
                     return node;
                 }
 
-                node.x += direction.x;
-            } else if (direction.y != 0) {
-                if ((!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + direction.y)) ||
-                    (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + direction.y))) {
+                node.x += dir.x;
+            } else {
+                if ((!grid.walkable(node.x - 1, node.y - dir.y) && grid.walkable(node.x - 1, node.y)) ||
+                    (!grid.walkable(node.x + 1, node.y - dir.y) && grid.walkable(node.x + 1, node.y))) {
                     return node;
                 }
 
-                node.y += direction.y;
+                if (jump_4way_orthogonal(grid, node, {1, 0}, goal) ||
+                    jump_4way_orthogonal(grid, node, {-1, 0}, goal)) {
+                    return node;
+                }
+
+                node.y += dir.y;
             }
         }
 
         return std::nullopt;
     }
 
-    static bool jump_vertical_check(
-        const Grid& grid, GridNode start, int dy, GridNode goal) {
+    static bool jump_4way_orthogonal(
+        const Grid& grid, GridNode start, GridNode dir, GridNode goal) {
 
-        GridNode node{start.x, start.y + dy};
+        GridNode node{start.x + dir.x, start.y + dir.y};
 
         while (grid.walkable(node.x, node.y)) {
             if (node == goal) {
                 return true;
             }
-            if ((!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + dy)) ||
-                (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + dy))) {
-                return true;
+
+            if (dir.x != 0) {
+                if ((!grid.walkable(node.x - dir.x, node.y - 1) && grid.walkable(node.x, node.y - 1)) ||
+                    (!grid.walkable(node.x - dir.x, node.y + 1) && grid.walkable(node.x, node.y + 1))) {
+                    return true;
+                }
+                node.x += dir.x;
+            } else {
+                if ((!grid.walkable(node.x - 1, node.y - dir.y) && grid.walkable(node.x - 1, node.y)) ||
+                    (!grid.walkable(node.x + 1, node.y - dir.y) && grid.walkable(node.x + 1, node.y))) {
+                    return true;
+                }
+                node.y += dir.y;
             }
-            node.y += dy;
         }
 
         return false;
+    }
+
+    template <typename GetNodeFn, typename OpenQueue, typename HeuristicFn>
+    static void explore_neighbors_8way(
+        const Grid& grid, GridNode current, GridNode parent, GridNode goal,
+        GetNodeFn& get_node, OpenQueue& open, HeuristicFn& heuristic,
+        std::size_t curr_idx, float curr_g) {
+
+        DirList dirs;
+        if (current == parent) {
+            static constexpr GridNode all_8[] = {
+                {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                {1, 1}, {-1, 1}, {1, -1}, {-1, -1}
+            };
+            for (const auto d : all_8) {
+                if (grid.walkable(current.x + d.x, current.y + d.y)) {
+                    if (d.x != 0 && d.y != 0) {
+                        if (!grid.walkable(current.x + d.x, current.y) || !grid.walkable(current.x, current.y + d.y)) {
+                            continue;
+                        }
+                    }
+                    dirs.push(d);
+                }
+            }
+        } else {
+            const int dx = (current.x > parent.x) - (current.x < parent.x);
+            const int dy = (current.y > parent.y) - (current.y < parent.y);
+
+            if (dx != 0 && dy != 0) {
+                if (grid.walkable(current.x, current.y + dy)) dirs.push({0, dy});
+                if (grid.walkable(current.x + dx, current.y)) dirs.push({dx, 0});
+                if (grid.walkable(current.x + dx, current.y + dy)) {
+                    if (grid.walkable(current.x + dx, current.y) && grid.walkable(current.x, current.y + dy)) {
+                        dirs.push({dx, dy});
+                    }
+                }
+                if (!grid.walkable(current.x - dx, current.y) && grid.walkable(current.x - dx, current.y + dy)) {
+                    if (grid.walkable(current.x, current.y + dy)) dirs.push({-dx, dy});
+                }
+                if (!grid.walkable(current.x, current.y - dy) && grid.walkable(current.x + dx, current.y - dy)) {
+                    if (grid.walkable(current.x + dx, current.y)) dirs.push({dx, -dy});
+                }
+            } else if (dx != 0) {
+                if (grid.walkable(current.x + dx, current.y)) dirs.push({dx, 0});
+                if (!grid.walkable(current.x, current.y - 1) && grid.walkable(current.x + dx, current.y - 1)) {
+                    if (grid.walkable(current.x + dx, current.y)) dirs.push({dx, -1});
+                }
+                if (!grid.walkable(current.x, current.y + 1) && grid.walkable(current.x + dx, current.y + 1)) {
+                    if (grid.walkable(current.x + dx, current.y)) dirs.push({dx, 1});
+                }
+            } else {
+                if (grid.walkable(current.x, current.y + dy)) dirs.push({0, dy});
+                if (!grid.walkable(current.x - 1, current.y) && grid.walkable(current.x - 1, current.y + dy)) {
+                    if (grid.walkable(current.x, current.y + dy)) dirs.push({-1, dy});
+                }
+                if (!grid.walkable(current.x + 1, current.y) && grid.walkable(current.x + 1, current.y + dy)) {
+                    if (grid.walkable(current.x, current.y + dy)) dirs.push({1, dy});
+                }
+            }
+        }
+
+        for (const auto d : dirs) {
+            const auto jump_node = jump_8way(grid, current, d, goal);
+            if (!jump_node.has_value()) {
+                continue;
+            }
+
+            const std::size_t jump_idx = grid.index(*jump_node);
+            auto& j_node = get_node(jump_idx);
+            if (j_node.closed) {
+                continue;
+            }
+
+            const int step_dx = std::abs(jump_node->x - current.x);
+            const int step_dy = std::abs(jump_node->y - current.y);
+            float dist = 0.0f;
+            if (step_dx != 0 && step_dy != 0) {
+                dist = static_cast<float>(step_dx) * 1.41421356f;
+            } else {
+                dist = static_cast<float>(step_dx + step_dy);
+            }
+
+            const float tentative_g = curr_g + dist;
+            if (tentative_g < j_node.g_score) {
+                j_node.g_score = tentative_g;
+                j_node.came_from = static_cast<std::int32_t>(curr_idx);
+                const float f = tentative_g + heuristic(jump_node->x, jump_node->y, goal.x, goal.y);
+                open.push({jump_idx, f});
+            }
+        }
+    }
+
+    static std::optional<GridNode> jump_8way(
+        const Grid& grid, GridNode current, GridNode dir, GridNode goal) {
+
+        const GridNode node{current.x + dir.x, current.y + dir.y};
+        if (!grid.walkable(node.x, node.y)) {
+            return std::nullopt;
+        }
+
+        if (dir.x != 0 && dir.y != 0) {
+            if (!grid.walkable(current.x + dir.x, current.y) || !grid.walkable(current.x, current.y + dir.y)) {
+                return std::nullopt; // Corner cutting disallowed
+            }
+        }
+
+        if (node == goal) {
+            return node;
+        }
+
+        if (dir.x != 0 && dir.y != 0) {
+            if ((!grid.walkable(node.x - dir.x, node.y) && grid.walkable(node.x - dir.x, node.y + dir.y)) ||
+                (!grid.walkable(node.x, node.y - dir.y) && grid.walkable(node.x + dir.x, node.y - dir.y))) {
+                return node;
+            }
+            if (jump_8way(grid, node, {dir.x, 0}, goal).has_value() ||
+                jump_8way(grid, node, {0, dir.y}, goal).has_value()) {
+                return node;
+            }
+        } else if (dir.x != 0) {
+            if ((!grid.walkable(node.x, node.y - 1) && grid.walkable(node.x + dir.x, node.y - 1)) ||
+                (!grid.walkable(node.x, node.y + 1) && grid.walkable(node.x + dir.x, node.y + 1))) {
+                return node;
+            }
+        } else {
+            if ((!grid.walkable(node.x - 1, node.y) && grid.walkable(node.x - 1, node.y + dir.y)) ||
+                (!grid.walkable(node.x + 1, node.y) && grid.walkable(node.x + 1, node.y + dir.y))) {
+                return node;
+            }
+        }
+
+        return jump_8way(grid, node, dir, goal);
     }
 };
 
