@@ -8,8 +8,19 @@
 #include <optional>
 #include <vector>
 
-#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
+#if defined(_M_AMD64) || defined(_M_X64) || defined(__x86_64__) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
+#define SCANDIUM_HAS_X86_SIMD 1
+#else
+#define SCANDIUM_HAS_X86_SIMD 0
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+    #define SCANDIUM_TARGET_AVX2 __attribute__((target("avx2,fma")))
+    #define SCANDIUM_TARGET_SSE  __attribute__((target("sse,sse2,sse3,ssse3,sse4.1")))
+#else
+    #define SCANDIUM_TARGET_AVX2
+    #define SCANDIUM_TARGET_SSE
 #endif
 
 #include "scandium/core/cpu_features.hpp"
@@ -100,8 +111,8 @@ struct Ray4Result {
 /**
  * @brief 8-wide AVX2 vectorized ray vs 8 AABBs intersection test.
  */
-#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
-inline Ray8Result intersect_ray_8aabb_avx2(const math::Ray& ray, const AABB8& boxes, float max_distance = 1e30f) noexcept {
+#if SCANDIUM_HAS_X86_SIMD
+SCANDIUM_TARGET_AVX2 inline Ray8Result intersect_ray_8aabb_avx2(const math::Ray& ray, const AABB8& boxes, float max_distance = 1e30f) noexcept {
     Ray8Result result{};
 
     const float inv_x = std::fabs(ray.direction.x) > 1e-7f ? 1.0f / ray.direction.x : (ray.direction.x >= 0.0f ? 1e30f : -1e30f);
@@ -159,8 +170,8 @@ inline Ray8Result intersect_ray_8aabb_avx2(const math::Ray& ray, const AABB8& bo
 /**
  * @brief 4-wide SSE vectorized ray vs 4 AABBs intersection test.
  */
-#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
-inline Ray4Result intersect_ray_4aabb_sse(const math::Ray& ray, const AABB4& boxes, float max_distance = 1e30f) noexcept {
+#if SCANDIUM_HAS_X86_SIMD
+SCANDIUM_TARGET_SSE inline Ray4Result intersect_ray_4aabb_sse(const math::Ray& ray, const AABB4& boxes, float max_distance = 1e30f) noexcept {
     Ray4Result result{};
 
     const float inv_x = std::fabs(ray.direction.x) > 1e-7f ? 1.0f / ray.direction.x : (ray.direction.x >= 0.0f ? 1e30f : -1e30f);
@@ -251,8 +262,8 @@ inline Ray8Result intersect_ray_8aabb_scalar(const math::Ray& ray, const AABB8& 
  * @brief Dynamic hardware-dispatched 8-box intersection using CPUID.
  */
 inline Ray8Result intersect_ray_8aabb(const math::Ray& ray, const AABB8& boxes, float max_distance = 1e30f) noexcept {
+#if SCANDIUM_HAS_X86_SIMD
     static const bool has_avx2 = core::CPUFeatures::has_avx2();
-#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
     if (has_avx2) {
         return intersect_ray_8aabb_avx2(ray, boxes, max_distance);
     }

@@ -68,6 +68,16 @@ void test_continuous_collision_detection() {
     }
 }
 
+#if SCANDIUM_HAS_X86_SIMD
+SCANDIUM_TARGET_AVX2 inline scandium::physics::Ray8Result invoke_avx2_test(const scandium::math::Ray& ray, const scandium::physics::AABB8& boxes) {
+    return scandium::physics::intersect_ray_8aabb_avx2(ray, boxes);
+}
+
+SCANDIUM_TARGET_SSE inline scandium::physics::Ray4Result invoke_sse_test(const scandium::math::Ray& ray, const scandium::physics::AABB4& boxes) {
+    return scandium::physics::intersect_ray_4aabb_sse(ray, boxes);
+}
+#endif
+
 void test_simd_ray_intersection() {
     using namespace scandium::physics;
     using scandium::math::Vec3f;
@@ -110,10 +120,10 @@ void test_simd_ray_intersection() {
         }
     }
 
-#if defined(_MSC_VER) || defined(__x86_64__) || defined(_M_X64)
+#if SCANDIUM_HAS_X86_SIMD
     // 3. Explicit AVX2 test
     if (scandium::core::CPUFeatures::has_avx2()) {
-        const auto avx_res = intersect_ray_8aabb_avx2(ray, soa8);
+        const auto avx_res = invoke_avx2_test(ray, soa8);
         assert(avx_res.hit_mask == scalar_res.hit_mask);
         for (int i = 0; i < 8; ++i) {
             if ((avx_res.hit_mask & (1u << i)) != 0) {
@@ -124,7 +134,7 @@ void test_simd_ray_intersection() {
 
     // 4. SSE 4-wide test
     const auto soa4 = AABB4::from_aabbs(boxes.data(), 4);
-    const auto sse_res = intersect_ray_4aabb_sse(ray, soa4);
+    const auto sse_res = invoke_sse_test(ray, soa4);
     // Lanes 0, 1, 3 hit, 2 miss -> mask = 11 (1 | 2 | 8)
     assert((sse_res.hit_mask & 0x0F) == (scalar_res.hit_mask & 0x0F));
 #endif
